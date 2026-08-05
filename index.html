@@ -53,7 +53,7 @@
     .download-btn:hover { background: #16a34a; }
 
     /* Loading / Processing Status Banner */
-    #uploadLoader { display: none; padding: 0.5rem 1rem; background: #0284c7; color: white; font-size: 0.85rem; text-align: center; font-weight: 600; border-top: 1px solid #334155; animation: pulse 1.5s infinite; }
+    #uploadLoader { display: none; padding: 0.6rem 1rem; background: #0284c7; color: white; font-size: 0.85rem; text-align: center; font-weight: 600; border-top: 1px solid #334155; animation: pulse 1.5s infinite; }
     @keyframes pulse { 0% { opacity: 0.7; } 50% { opacity: 1; } 100% { opacity: 0.7; } }
 
     /* Fullscreen Image Lightbox Modal */
@@ -108,7 +108,7 @@
 
     <div class="messages-area" id="messagesArea"></div>
 
-    <div id="uploadLoader">⏳ Preparing, compressing, and encrypting file... Please wait.</div>
+    <div id="uploadLoader">⏳ Preparing and encrypting file... Please keep connection active.</div>
 
     <div class="chat-input-container">
       <label class="icon-btn" title="Send Any File, Photo or Video" id="fileLabelBtn">
@@ -121,6 +121,7 @@
   </div>
 
   <script>
+    const myClientId = 'client_' + Math.random().toString(36).substring(2, 9);
     const myRoomId = 'room_' + Math.random().toString(36).substring(2, 9);
     document.getElementById('myRoomDisplay').textContent = myRoomId;
 
@@ -128,6 +129,8 @@
     let activeRoomId = myRoomId;
     let cryptoKey = null;
     let mqttClient = null;
+    let localChatHistory = [];
+    let hasLoadedHistory = false;
 
     async function initCryptoKey(roomId) {
       const enc = new TextEncoder();
@@ -178,7 +181,6 @@
       document.getElementById('roomBadge').textContent = targetInput ? 'Connected to: ' + targetInput : 'Hosting Room: ' + myRoomId;
       document.getElementById('chatHeaderTitle').textContent = targetInput ? 'Chat (Joined Room)' : 'Chat (My Room)';
 
-      // Connect to MQTT Broker using multiple public websocket endpoints for enhanced stability
       mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
         keepalive: 60,
         reconnectPeriod: 1000,
@@ -186,20 +188,61 @@
       });
 
       mqttClient.on('connect', async () => {
-        const topic = `e2ee-hostchat-v4/${activeRoomId}`;
+        const topic = `e2ee-hostchat-v5/${activeRoomId}`;
         mqttClient.subscribe(topic);
+
+        // Request history from peers if we just joined / reconnected
+        setTimeout(async () => {
+          if (!hasLoadedHistory) {
+            await broadcastPayload({
+              type: 'history_request',
+              requesterId: myClientId
+            });
+          }
+        }, 1000);
       });
 
       mqttClient.on('message', async (t, message) => {
         const decrypted = await decryptPayload(message.toString());
         if (!decrypted) return;
-
-        // Verify message is within the 24-hour expiration window
-        const now = Date.now();
-        if (decrypted.expiresAt && now > decrypted.expiresAt) return; // Drop expired message
-
-        renderMessage(decrypted, true);
+        handleIncomingMessage(decrypted);
       });
+    }
+
+    async function handleIncomingMessage(msg) {
+      const now = Date.now();
+
+      // Handle history synchronization requests from reconnected peers
+      if (msg.type === 'history_request') {
+        if (msg.requesterId !== myClientId && localChatHistory.length > 0) {
+          await broadcastPayload({
+            type: 'history_response',
+            targetId: msg.requesterId,
+            history: localChatHistory
+          });
+        }
+        return;
+      }
+
+      // Handle history response delivered to us after reconnecting
+      if (msg.type === 'history_response') {
+        if (msg.targetId === myClientId && !hasLoadedHistory) {
+          hasLoadedHistory = true;
+          localChatHistory = msg.history.filter(m => !m.expiresAt || now <= m.expiresAt);
+          document.getElementById('messagesArea').innerHTML = '';
+          localChatHistory.forEach(item => renderMessage(item, false));
+        }
+        return;
+      }
+
+      // Drop expired messages
+      if (msg.expiresAt && now > msg.expiresAt) return;
+
+      // Append to local history tracking
+      localChatHistory.push(msg);
+      if (localChatHistory.length > 150) localChatHistory.shift();
+
+      renderMessage(msg, true);
     }
 
     async function sendMessage() {
@@ -210,23 +253,22 @@
       const now = Date.now();
       const payload = {
         sender: username,
+        senderId: myClientId,
         type: 'text',
         content: text,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         timestamp: now,
-        expiresAt: now + (24 * 60 * 60 * 1000) // 24 hours expiry window
+        expiresAt: now + (24 * 60 * 60 * 1000)
       };
 
       input.value = '';
       await broadcastPayload(payload);
     }
 
-    // Handles file upload with loading indicator to resolve slow internet drop-offs
     async function handleFileUpload(event) {
       const file = event.target.files[0];
       if (!file) return;
 
-      // Show loader and disable input elements
       const loader = document.getElementById('uploadLoader');
       const fileInputElem = document.getElementById('fileInput');
       const messageInput = document.getElementById('messageInput');
@@ -248,6 +290,7 @@
 
           const payload = {
             sender: username,
+            senderId: myClientId,
             type: fileTypeCategory,
             content: base64Data,
             fileName: file.name,
@@ -259,9 +302,8 @@
 
           await broadcastPayload(payload);
         } catch (err) {
-          alert("Error processing file payload.");
+          alert("Error processing file.");
         } finally {
-          // Hide loader and re-enable inputs
           loader.style.display = 'none';
           fileInputElem.disabled = false;
           messageInput.disabled = false;
@@ -282,18 +324,16 @@
 
     async function broadcastPayload(payload) {
       const encrypted = await encryptPayload(payload);
-      const topic = `e2ee-hostchat-v4/${activeRoomId}`;
-      mqttClient.publish(topic, encrypted, { qos: 1 }); // QoS 1 ensures packet delivery acknowledgment
+      const topic = `e2ee-hostchat-v5/${activeRoomId}`;
+      mqttClient.publish(topic, encrypted, { qos: 1 });
     }
 
     function renderMessage(msg, shouldScroll = true) {
-      // Double check expiration on render
       if (msg.expiresAt && Date.now() > msg.expiresAt) return;
 
       const container = document.getElementById('messagesArea');
-
       const msgDiv = document.createElement('div');
-      const isMine = msg.sender === username;
+      const isMine = msg.senderId === myClientId;
       msgDiv.className = `message ${isMine ? 'mine' : 'others'}`;
 
       let contentHtml = '';
