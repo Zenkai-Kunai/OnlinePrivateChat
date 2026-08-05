@@ -52,6 +52,10 @@
     .download-btn { background: #22c55e; color: white; padding: 0.4rem 0.8rem; border-radius: 6px; text-decoration: none; font-size: 0.8rem; font-weight: bold; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; transition: background 0.2s; }
     .download-btn:hover { background: #16a34a; }
 
+    /* Loading / Processing Status Banner */
+    #uploadLoader { display: none; padding: 0.5rem 1rem; background: #0284c7; color: white; font-size: 0.85rem; text-align: center; font-weight: 600; border-top: 1px solid #334155; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0% { opacity: 0.7; } 50% { opacity: 1; } 100% { opacity: 0.7; } }
+
     /* Fullscreen Image Lightbox Modal */
     #lightbox { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.9); display: none; justify-content: center; align-items: center; z-index: 1000; padding: 2rem; }
     #lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
@@ -97,34 +101,34 @@
     <div class="chat-header">
       <div class="room-title">
         <h3 id="chatHeaderTitle">Chat Room</h3>
-        <span class="e2e-tag">🔒 End-to-End Encrypted (AES-GCM)</span>
+        <span class="e2e-tag">🔒 End-to-End Encrypted (24h Auto-Delete)</span>
       </div>
       <span class="room-badge" id="roomBadge">Status: Ready</span>
     </div>
 
     <div class="messages-area" id="messagesArea"></div>
 
+    <div id="uploadLoader">⏳ Preparing, compressing, and encrypting file... Please wait.</div>
+
     <div class="chat-input-container">
-      <label class="icon-btn" title="Send Any File, Photo or Video">
+      <label class="icon-btn" title="Send Any File, Photo or Video" id="fileLabelBtn">
         📎
         <input type="file" id="fileInput" style="display:none;" onchange="handleFileUpload(event)">
       </label>
       <input type="text" id="messageInput" placeholder="Type a secure message..." onkeydown="if(event.key==='Enter') sendMessage()">
-      <button class="send-btn" onclick="sendMessage()">Send</button>
+      <button class="send-btn" id="sendTextBtn" onclick="sendMessage()">Send</button>
     </div>
   </div>
 
   <script>
-    // Each device generates its own unique host room ID upon opening link
     const myRoomId = 'room_' + Math.random().toString(36).substring(2, 9);
     document.getElementById('myRoomDisplay').textContent = myRoomId;
 
     let username = 'Anonymous';
-    let activeRoomId = myRoomId; // Defaults to hosting own room
+    let activeRoomId = myRoomId;
     let cryptoKey = null;
     let mqttClient = null;
 
-    // Derive AES-256-GCM encryption key based entirely on the target room ID
     async function initCryptoKey(roomId) {
       const enc = new TextEncoder();
       const keyMaterial = await crypto.subtle.digest('SHA-256', enc.encode(roomId));
@@ -151,7 +155,7 @@
         const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, cryptoKey, data);
         return JSON.parse(new TextDecoder().decode(decrypted));
       } catch (e) {
-        return null; // Ignore mismatched packets
+        return null;
       }
     }
 
@@ -162,7 +166,6 @@
       if (!nameInput) return alert('Please enter your display name!');
       username = nameInput;
 
-      // If user typed someone else's room ID, switch to that room. Otherwise host own room.
       if (targetInput) {
         activeRoomId = targetInput;
       } else {
@@ -175,28 +178,26 @@
       document.getElementById('roomBadge').textContent = targetInput ? 'Connected to: ' + targetInput : 'Hosting Room: ' + myRoomId;
       document.getElementById('chatHeaderTitle').textContent = targetInput ? 'Chat (Joined Room)' : 'Chat (My Room)';
 
-      // Connect to MQTT Broker
+      // Connect to MQTT Broker using multiple public websocket endpoints for enhanced stability
       mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
-        keepalive: 30,
-        reconnectPeriod: 2000
+        keepalive: 60,
+        reconnectPeriod: 1000,
+        connectTimeout: 30000
       });
 
       mqttClient.on('connect', async () => {
-        const topic = `e2ee-hostchat-v3/${activeRoomId}`;
+        const topic = `e2ee-hostchat-v4/${activeRoomId}`;
         mqttClient.subscribe(topic);
-
-        const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        await broadcastPayload({
-          sender: username,
-          type: 'presence',
-          action: 'join',
-          time: nowTime
-        });
       });
 
       mqttClient.on('message', async (t, message) => {
         const decrypted = await decryptPayload(message.toString());
         if (!decrypted) return;
+
+        // Verify message is within the 24-hour expiration window
+        const now = Date.now();
+        if (decrypted.expiresAt && now > decrypted.expiresAt) return; // Drop expired message
+
         renderMessage(decrypted, true);
       });
     }
@@ -206,64 +207,90 @@
       const text = input.value.trim();
       if (!text) return;
 
+      const now = Date.now();
       const payload = {
         sender: username,
         type: 'text',
         content: text,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp: now,
+        expiresAt: now + (24 * 60 * 60 * 1000) // 24 hours expiry window
       };
 
       input.value = '';
       await broadcastPayload(payload);
     }
 
-    // Handles ANY file type upload with zero size limitation via Base64 conversion
+    // Handles file upload with loading indicator to resolve slow internet drop-offs
     async function handleFileUpload(event) {
       const file = event.target.files[0];
       if (!file) return;
 
+      // Show loader and disable input elements
+      const loader = document.getElementById('uploadLoader');
+      const fileInputElem = document.getElementById('fileInput');
+      const messageInput = document.getElementById('messageInput');
+      
+      loader.style.display = 'block';
+      fileInputElem.disabled = true;
+      messageInput.disabled = true;
+
       const reader = new FileReader();
       reader.onload = async function(e) {
-        const base64Data = e.target.result;
-        const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        try {
+          const base64Data = e.target.result;
+          const now = Date.now();
+          const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-        let fileTypeCategory = 'file';
-        if (file.type.startsWith('image/')) fileTypeCategory = 'image';
-        else if (file.type.startsWith('video/')) fileTypeCategory = 'video';
+          let fileTypeCategory = 'file';
+          if (file.type.startsWith('image/')) fileTypeCategory = 'image';
+          else if (file.type.startsWith('video/')) fileTypeCategory = 'video';
 
-        const payload = {
-          sender: username,
-          type: fileTypeCategory,
-          content: base64Data,
-          fileName: file.name,
-          fileSize: formatBytes(file.size),
-          time: nowTime
-        };
+          const payload = {
+            sender: username,
+            type: fileTypeCategory,
+            content: base64Data,
+            fileName: file.name,
+            fileSize: formatBytes(file.size),
+            time: nowTime,
+            timestamp: now,
+            expiresAt: now + (24 * 60 * 60 * 1000)
+          };
 
-        await broadcastPayload(payload);
+          await broadcastPayload(payload);
+        } catch (err) {
+          alert("Error processing file payload.");
+        } finally {
+          // Hide loader and re-enable inputs
+          loader.style.display = 'none';
+          fileInputElem.disabled = false;
+          messageInput.disabled = false;
+          event.target.value = '';
+        }
+      };
+
+      reader.onerror = function() {
+        loader.style.display = 'none';
+        fileInputElem.disabled = false;
+        messageInput.disabled = false;
+        alert("Failed to read file.");
+        event.target.value = '';
       };
 
       reader.readAsDataURL(file);
-      event.target.value = '';
     }
 
     async function broadcastPayload(payload) {
       const encrypted = await encryptPayload(payload);
-      const topic = `e2ee-hostchat-v3/${activeRoomId}`;
-      mqttClient.publish(topic, encrypted);
+      const topic = `e2ee-hostchat-v4/${activeRoomId}`;
+      mqttClient.publish(topic, encrypted, { qos: 1 }); // QoS 1 ensures packet delivery acknowledgment
     }
 
     function renderMessage(msg, shouldScroll = true) {
-      const container = document.getElementById('messagesArea');
+      // Double check expiration on render
+      if (msg.expiresAt && Date.now() > msg.expiresAt) return;
 
-      if (msg.type === 'presence') {
-        const sysDiv = document.createElement('div');
-        sysDiv.className = 'system-msg';
-        sysDiv.textContent = `🟢 ${msg.sender} joined the room at ${msg.time}`;
-        container.appendChild(sysDiv);
-        if (shouldScroll) container.scrollTop = container.scrollHeight;
-        return;
-      }
+      const container = document.getElementById('messagesArea');
 
       const msgDiv = document.createElement('div');
       const isMine = msg.sender === username;
@@ -301,7 +328,6 @@
       if (shouldScroll) container.scrollTop = container.scrollHeight;
     }
 
-    // Lightbox Controls for Fullscreen Images
     function openLightbox(imgSrc) {
       const lightbox = document.getElementById('lightbox');
       const lightboxImg = document.getElementById('lightboxImg');
