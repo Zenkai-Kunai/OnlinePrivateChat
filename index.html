@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>E2EE Private P2P Chat</title>
+  <title>E2EE Host & Join Private Chat</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
@@ -11,13 +11,15 @@
     
     /* Setup Modal */
     #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center; z-index: 100; }
-    .modal-box { background: #1e293b; padding: 2rem; border-radius: 16px; width: 90%; max-width: 400px; text-align: center; border: 1px solid #334155; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+    .modal-box { background: #1e293b; padding: 2rem; border-radius: 16px; width: 90%; max-width: 420px; text-align: center; border: 1px solid #334155; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
     .modal-box h2 { margin-bottom: 0.5rem; color: #38bdf8; }
-    .modal-box p { font-size: 0.85rem; color: #94a3b8; margin-bottom: 1.25rem; }
+    .modal-box p { font-size: 0.85rem; color: #94a3b8; margin-bottom: 1rem; }
     .modal-box input { width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: white; margin-bottom: 1rem; outline: none; font-size: 1rem; text-align: center; }
-    .my-id-box { background: #0f172a; padding: 0.75rem; border-radius: 8px; border: 1px dashed #475569; margin-bottom: 1.25rem; font-size: 0.9rem; color: #38bdf8; word-break: break-all; }
-    .modal-box button { width: 100%; padding: 0.75rem; border-radius: 8px; border: none; background: #0284c7; color: white; font-weight: bold; font-size: 1rem; cursor: pointer; transition: background 0.2s; }
+    .my-room-box { background: #0f172a; padding: 0.75rem; border-radius: 8px; border: 1px dashed #475569; margin-bottom: 1.25rem; font-size: 0.9rem; color: #38bdf8; word-break: break-all; }
+    .modal-box button { width: 100%; padding: 0.75rem; border-radius: 8px; border: none; background: #0284c7; color: white; font-weight: bold; font-size: 1rem; cursor: pointer; transition: background 0.2s; margin-top: 0.5rem; }
     .modal-box button:hover { background: #0369a1; }
+    .divider { margin: 1rem 0; border-top: 1px solid #334155; position: relative; }
+    .divider span { position: relative; top: -10px; background: #1e293b; padding: 0 10px; font-size: 0.75rem; color: #64748b; }
 
     /* Chat App Interface */
     .chat-container { width: 100%; max-width: 650px; height: 100vh; display: flex; flex-direction: column; background: #1e293b; border-left: 1px solid #334155; border-right: 1px solid #334155; }
@@ -70,13 +72,16 @@
   <!-- Connection Setup Modal -->
   <div id="modal">
     <div class="modal-box">
-      <h2>Private P2P Chat</h2>
-      <p>Your unique identifier:</p>
-      <div class="my-id-box" id="myIdDisplay">Generating ID...</div>
-      <p>Enter your display name and peer's ID to connect:</p>
-      <input type="text" id="usernameInput" placeholder="Your Name (e.g. Alex)" maxlength="20">
-      <input type="text" id="peerIdInput" placeholder="Paste Peer's ID Here">
-      <button onclick="startPrivateChat()">Start Secure Chat</button>
+      <h2>Private Room Chat</h2>
+      <p>Your Device's Room ID:</p>
+      <div class="my-room-box" id="myRoomDisplay">Generating Room ID...</div>
+      
+      <input type="text" id="usernameInput" placeholder="Your Display Name (e.g. Alex)" maxlength="20">
+      
+      <div class="divider"><span>OR JOIN SOMEONE ELSE</span></div>
+      
+      <input type="text" id="targetRoomInput" placeholder="Paste Friend's Room ID Here">
+      <button onclick="connectToChat()">Open / Join Chat</button>
     </div>
   </div>
 
@@ -91,10 +96,10 @@
   <div class="chat-container">
     <div class="chat-header">
       <div class="room-title">
-        <h3 id="chatHeaderTitle">Private Secure Chat</h3>
+        <h3 id="chatHeaderTitle">Chat Room</h3>
         <span class="e2e-tag">🔒 End-to-End Encrypted (AES-GCM)</span>
       </div>
-      <span class="room-badge" id="roomBadge">Status: Offline</span>
+      <span class="room-badge" id="roomBadge">Status: Ready</span>
     </div>
 
     <div class="messages-area" id="messagesArea"></div>
@@ -110,22 +115,19 @@
   </div>
 
   <script>
-    // Generate unique random client ID string
-    const myClientId = 'user_' + Math.random().toString(36).substring(2, 9);
-    document.getElementById('myIdDisplay').textContent = myClientId;
+    // Each device generates its own unique host room ID upon opening link
+    const myRoomId = 'room_' + Math.random().toString(36).substring(2, 9);
+    document.getElementById('myRoomDisplay').textContent = myRoomId;
 
     let username = 'Anonymous';
-    let peerId = '';
-    let sharedChannel = '';
+    let activeRoomId = myRoomId; // Defaults to hosting own room
     let cryptoKey = null;
     let mqttClient = null;
-    let localChatHistory = [];
 
-    // Derive a mutual AES-256-GCM crypto key alphabetically sorted from both IDs
-    async function initCryptoKey(id1, id2) {
-      const sortedIds = [id1, id2].sort().join(':');
+    // Derive AES-256-GCM encryption key based entirely on the target room ID
+    async function initCryptoKey(roomId) {
       const enc = new TextEncoder();
-      const keyMaterial = await crypto.subtle.digest('SHA-256', enc.encode(sortedIds));
+      const keyMaterial = await crypto.subtle.digest('SHA-256', enc.encode(roomId));
       return crypto.subtle.importKey('raw', keyMaterial, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
     }
 
@@ -149,28 +151,29 @@
         const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, cryptoKey, data);
         return JSON.parse(new TextDecoder().decode(decrypted));
       } catch (e) {
-        return null; // Ignore messages encrypted with different room keys
+        return null; // Ignore mismatched packets
       }
     }
 
-    async function startPrivateChat() {
+    async function connectToChat() {
       const nameInput = document.getElementById('usernameInput').value.trim();
-      const targetInput = document.getElementById('peerIdInput').value.trim();
+      const targetInput = document.getElementById('targetRoomInput').value.trim();
 
       if (!nameInput) return alert('Please enter your display name!');
-      if (!targetInput) return alert("Please enter your peer's ID to initiate connection!");
-      if (targetInput === myClientId) return alert("You cannot chat with yourself! Enter a peer's ID.");
-
       username = nameInput;
-      peerId = targetInput;
 
-      // Construct shared deterministic communication topic channel
-      sharedChannel = [myClientId, peerId].sort().join('--');
-      cryptoKey = await initCryptoKey(myClientId, peerId);
+      // If user typed someone else's room ID, switch to that room. Otherwise host own room.
+      if (targetInput) {
+        activeRoomId = targetInput;
+      } else {
+        activeRoomId = myRoomId;
+      }
+
+      cryptoKey = await initCryptoKey(activeRoomId);
 
       document.getElementById('modal').style.display = 'none';
-      document.getElementById('roomBadge').textContent = 'Connected: ' + peerId;
-      document.getElementById('chatHeaderTitle').textContent = 'Chat with ' + peerId;
+      document.getElementById('roomBadge').textContent = targetInput ? 'Connected to: ' + targetInput : 'Hosting Room: ' + myRoomId;
+      document.getElementById('chatHeaderTitle').textContent = targetInput ? 'Chat (Joined Room)' : 'Chat (My Room)';
 
       // Connect to MQTT Broker
       mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
@@ -179,13 +182,12 @@
       });
 
       mqttClient.on('connect', async () => {
-        const topic = `e2ee-p2p-chat-v2/${sharedChannel}`;
+        const topic = `e2ee-hostchat-v3/${activeRoomId}`;
         mqttClient.subscribe(topic);
 
         const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         await broadcastPayload({
           sender: username,
-          senderId: myClientId,
           type: 'presence',
           action: 'join',
           time: nowTime
@@ -195,13 +197,8 @@
       mqttClient.on('message', async (t, message) => {
         const decrypted = await decryptPayload(message.toString());
         if (!decrypted) return;
-        handleIncomingMessage(decrypted);
+        renderMessage(decrypted, true);
       });
-    }
-
-    async function handleIncomingMessage(msg) {
-      localChatHistory.push(msg);
-      renderMessage(msg, true);
     }
 
     async function sendMessage() {
@@ -211,7 +208,6 @@
 
       const payload = {
         sender: username,
-        senderId: myClientId,
         type: 'text',
         content: text,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -237,7 +233,6 @@
 
         const payload = {
           sender: username,
-          senderId: myClientId,
           type: fileTypeCategory,
           content: base64Data,
           fileName: file.name,
@@ -254,7 +249,7 @@
 
     async function broadcastPayload(payload) {
       const encrypted = await encryptPayload(payload);
-      const topic = `e2ee-p2p-chat-v2/${sharedChannel}`;
+      const topic = `e2ee-hostchat-v3/${activeRoomId}`;
       mqttClient.publish(topic, encrypted);
     }
 
@@ -264,14 +259,14 @@
       if (msg.type === 'presence') {
         const sysDiv = document.createElement('div');
         sysDiv.className = 'system-msg';
-        sysDiv.textContent = `🟢 ${msg.sender} joined the secure channel at ${msg.time}`;
+        sysDiv.textContent = `🟢 ${msg.sender} joined the room at ${msg.time}`;
         container.appendChild(sysDiv);
         if (shouldScroll) container.scrollTop = container.scrollHeight;
         return;
       }
 
       const msgDiv = document.createElement('div');
-      const isMine = msg.senderId === myClientId;
+      const isMine = msg.sender === username;
       msgDiv.className = `message ${isMine ? 'mine' : 'others'}`;
 
       let contentHtml = '';
