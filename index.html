@@ -1,1739 +1,355 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure E2EE Private P2P Chat & Workspace</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
-    <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>E2EE Public Group Chat</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; }
+    
+    /* Username Input Modal */
+    #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center; z-index: 100; }
+    .modal-box { background: #1e293b; padding: 2rem; border-radius: 16px; width: 90%; max-width: 380px; text-align: center; border: 1px solid #334155; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+    .modal-box h2 { margin-bottom: 0.5rem; color: #38bdf8; }
+    .modal-box p { font-size: 0.85rem; color: #94a3b8; margin-bottom: 1.25rem; }
+    .modal-box input { width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: white; margin-bottom: 1rem; outline: none; font-size: 1rem; }
+    .modal-box button { width: 100%; padding: 0.75rem; border-radius: 8px; border: none; background: #0284c7; color: white; font-weight: bold; font-size: 1rem; cursor: pointer; transition: background 0.2s; }
+    .modal-box button:hover { background: #0369a1; }
 
-        body {
-            background-color: #1e1e24;
-            color: #f5f5f7;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            overflow: hidden;
-        }
+    /* Chat App Interface */
+    .chat-container { width: 100%; max-width: 650px; height: 100vh; display: flex; flex-direction: column; background: #1e293b; border-left: 1px solid #334155; border-right: 1px solid #334155; }
+    
+    /* Header */
+    .chat-header { padding: 1rem; background: #0f172a; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; }
+    .room-title { display: flex; flex-direction: column; }
+    .e2e-tag { color: #22c55e; font-size: 0.75rem; margin-top: 2px; }
+    .room-badge { background: #0369a1; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
 
-        /* Toolbar Styling */
-        .toolbar {
-            background-color: #2b2b36;
-            padding: 10px 20px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-            z-index: 10;
-            flex-wrap: wrap;
-            gap: 12px;
-        }
+    /* Messages Stream */
+    .messages-area { flex: 1; padding: 1rem; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; }
+    .message { max-width: 80%; padding: 0.65rem 0.9rem; border-radius: 12px; font-size: 0.95rem; word-break: break-word; }
+    .message.mine { align-self: flex-end; background: #0284c7; color: white; border-bottom-right-radius: 2px; }
+    .message.others { align-self: flex-start; background: #334155; color: #f8fafc; border-bottom-left-radius: 2px; }
+    .sender-name { font-size: 0.75rem; font-weight: bold; margin-bottom: 0.25rem; color: #7dd3fc; }
+    .time-stamp { font-size: 0.65rem; text-align: right; opacity: 0.7; margin-top: 0.3rem; }
+    
+    .system-msg { align-self: center; background: #0f172a; color: #94a3b8; font-size: 0.75rem; padding: 0.3rem 0.8rem; border-radius: 12px; border: 1px solid #334155; margin: 0.2rem 0; }
+    .chat-media { max-width: 100%; max-height: 250px; border-radius: 8px; margin-top: 0.5rem; display: block; object-fit: cover; }
 
-        .toolbar-group {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .toolbar-divider {
-            width: 1px;
-            height: 24px;
-            background-color: #4a4a5a;
-            margin: 0 4px;
-        }
-
-        /* Buttons & Inputs */
-        .btn {
-            background-color: #3a3a4a;
-            color: #fff;
-            border: 1px solid #4a4a5a;
-            padding: 8px 14px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            transition: all 0.2s ease;
-        }
-
-        .btn:hover:not(:disabled) {
-            background-color: #4a4a5a;
-            border-color: #6200ee;
-        }
-
-        .btn:disabled {
-            background-color: #252530;
-            color: #707080;
-            border-color: #303040;
-            cursor: not-allowed;
-        }
-
-        .btn.active {
-            background-color: #6200ee;
-            border-color: #7c4dff;
-            color: white;
-        }
-
-        select.btn {
-            appearance: none;
-            padding-right: 28px;
-            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
-            background-repeat: no-repeat;
-            background-position: right 8px center;
-            background-size: 14px;
-        }
-
-        .file-input-wrapper {
-            position: relative;
-            overflow: hidden;
-            display: inline-block;
-        }
-
-        .file-input-wrapper input[type=file] {
-            position: absolute;
-            left: 0;
-            top: 0;
-            opacity: 0;
-            font-size: 100px;
-            cursor: pointer;
-        }
-
-        .page-info, .zoom-info {
-            font-size: 14px;
-            color: #a0a0b0;
-            text-align: center;
-        }
-        .page-info { min-width: 80px; }
-        .zoom-info { min-width: 60px; }
-
-        .search-input {
-            padding: 8px 12px;
-            border-radius: 6px;
-            border: 1px solid #4a4a5a;
-            background-color: #1e1e24;
-            color: #fff;
-            font-size: 14px;
-            outline: none;
-            width: 150px;
-            transition: border-color 0.2s;
-        }
-        .search-input:focus {
-            border-color: #6200ee;
-        }
-        
-        #search-count {
-            font-size: 13px;
-            color: #a0a0b0;
-            min-width: 40px;
-        }
-
-        /* Dynamic Tabs Layout Interface */
-        .tab-bar {
-            background-color: #252530;
-            display: flex;
-            align-items: flex-end;
-            padding: 6px 20px 0 20px;
-            gap: 6px;
-            border-bottom: 1px solid #3a3a4a;
-            z-index: 9;
-            user-select: none;
-        }
-
-        .tabs-wrapper {
-            display: flex;
-            gap: 4px;
-            align-items: flex-end;
-        }
-
-        .tab-btn {
-            background-color: #2b2b36;
-            color: #a0a0b0;
-            border: 1px solid #3a3a4a;
-            border-bottom: none;
-            padding: 10px 14px;
-            border-top-left-radius: 6px;
-            border-top-right-radius: 6px;
-            cursor: grab;
-            font-size: 13px;
-            font-weight: 500;
-            max-width: 220px;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            transition: background-color 0.2s, color 0.2s;
-        }
-
-        .tab-btn:active { cursor: grabbing; }
-        .tab-btn.dragging { opacity: 0.4; background-color: #1a1a24; }
-        .tab-btn:hover { background-color: #3a3a4a; color: #fff; }
-
-        .tab-btn.active {
-            background-color: #1e1e24;
-            color: #fff;
-            border-color: #4a4a5a;
-            font-weight: 600;
-            position: relative;
-        }
-
-        .tab-btn.active::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0;
-            height: 3px;
-            background-color: #6200ee;
-        }
-
-        .tab-text {
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 150px;
-            pointer-events: none;
-        }
-
-        .close-tab-x {
-            font-size: 16px;
-            font-weight: bold;
-            color: #707080;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 18px; height: 18px;
-            border-radius: 50%;
-            transition: all 0.15s ease;
-        }
-        .close-tab-x:hover { background-color: rgba(255, 255, 255, 0.15); color: #ff3b30; }
-
-        .add-tab-btn {
-            background-color: #2b2b36;
-            color: #a0a0b0;
-            border: 1px solid #3a3a4a;
-            border-bottom: none;
-            padding: 8px 16px;
-            border-top-left-radius: 6px;
-            border-top-right-radius: 6px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: bold;
-            transition: all 0.2s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 37px;
-        }
-        .add-tab-btn:hover { background-color: #3a3a4a; color: #fff; border-color: #6200ee; }
-
-        /* Main App Area Layout (Split Viewer & Chat Panel) */
-        .workspace-layout {
-            flex: 1;
-            display: flex;
-            overflow: hidden;
-            position: relative;
-        }
-
-        /* Viewer Container */
-        .viewer-container {
-            flex: 1;
-            overflow: hidden;
-            position: relative;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 30px;
-            cursor: grab;
-            user-select: none;
-            background-color: #1e1e24;
-        }
-
-        .viewer-container.panning { cursor: grabbing; }
-        .viewer-container.drawing-mode { cursor: crosshair; }
-
-        /* Page Wrapper */
-        .page-wrapper {
-            position: relative;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-            background-color: #fff;
-            display: none;
-            transform: translate(0px, 0px);
-            will-change: transform;
-        }
-
-        canvas { display: block; }
-
-        #drawing-canvas {
-            position: absolute;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            z-index: 5;
-            pointer-events: none;
-        }
-
-        .annotation-layer {
-            position: absolute;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            z-index: 6;
-            pointer-events: none;
-        }
-
-        /* Sticky Box Styling */
-        .note-box {
-            position: absolute;
-            width: 220px;
-            background-color: #fff7c2;
-            border: 1px solid #e6db87;
-            border-radius: 6px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-            padding: 6px;
-            z-index: 100;
-            pointer-events: auto;
-            cursor: move;
-        }
-
-        .note-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 4px;
-            border-bottom: 1px solid #e6db87;
-            padding-bottom: 4px;
-        }
-
-        .note-pin { font-size: 12px; color: #8b8036; font-weight: bold; display: flex; align-items: center; gap: 4px; }
-        .note-close { background: none; border: none; color: #8b8036; cursor: pointer; font-size: 14px; font-weight: bold; line-height: 1; }
-        .note-close:hover { color: #ff3b30; }
-        .note-textarea { width: 100%; height: 80px; background: transparent; border: none; resize: vertical; font-size: 13px; color: #333; outline: none; font-family: inherit; }
-
-        /* Placeholder */
-        .placeholder {
-            position: absolute;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            text-align: center;
-            color: #707080;
-        }
-        .placeholder svg { width: 64px; height: 64px; fill: currentColor; margin-bottom: 16px; }
-
-        /* Tip Banner */
-        .tip-banner {
-            position: absolute;
-            bottom: 20px; left: 50%;
-            transform: translateX(-50%);
-            background-color: rgba(43, 43, 54, 0.9);
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 13px;
-            color: #a0a0b0;
-            pointer-events: none;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            display: none;
-            z-index: 1000;
-        }
-
-        /* --- PRIVATE P2P CHAT SIDEBAR --- */
-        .chat-sidebar {
-            width: 340px;
-            background-color: #252530;
-            border-left: 1px solid #3a3a4a;
-            display: flex;
-            flex-direction: column;
-            z-index: 20;
-        }
-
-        .chat-header {
-            padding: 14px;
-            background-color: #2b2b36;
-            border-bottom: 1px solid #3a3a4a;
-            font-size: 14px;
-            font-weight: 600;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .connection-status {
-            font-size: 12px;
-            padding: 4px 8px;
-            border-radius: 4px;
-            background-color: #3a3a4a;
-            color: #ffa500;
-            text-align: center;
-        }
-        .connection-status.connected { background-color: #1e4620; color: #4cd137; }
-
-        .id-box {
-            display: flex;
-            gap: 6px;
-        }
-        .id-box input {
-            flex: 1;
-            background: #1e1e24;
-            border: 1px solid #4a4a5a;
-            color: #fff;
-            padding: 6px;
-            border-radius: 4px;
-            font-size: 12px;
-            outline: none;
-        }
-
-        .chat-messages {
-            flex: 1;
-            padding: 12px;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .message {
-            max-width: 85%;
-            padding: 8px 12px;
-            border-radius: 8px;
-            font-size: 13px;
-            word-break: break-word;
-            line-height: 1.4;
-        }
-        .message.incoming { background-color: #3a3a4a; align-self: flex-start; color: #fff; }
-        .message.outgoing { background-color: #6200ee; align-self: flex-end; color: #fff; }
-        .message img {
-            max-width: 100%;
-            border-radius: 6px;
-            cursor: pointer;
-            margin-top: 4px;
-            display: block;
-            transition: opacity 0.2s;
-        }
-        .message img:hover { opacity: 0.9; }
-
-        .file-attachment-card {
-            background: rgba(0,0,0,0.2);
-            padding: 8px;
-            border-radius: 6px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-            margin-top: 4px;
-        }
-        .file-info-text { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-        .download-btn {
-            background-color: #ffffff;
-            color: #1e1e24;
-            border: none;
-            padding: 4px 10px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-weight: bold;
-            cursor: pointer;
-            text-decoration: none;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            flex-shrink: 0;
-        }
-        .download-btn:hover { background-color: #e0e0e0; }
-
-        .chat-input-area {
-            padding: 12px;
-            background-color: #2b2b36;
-            border-top: 1px solid #3a3a4a;
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
-        .chat-input-area input[type="text"] {
-            flex: 1;
-            background: #1e1e24;
-            border: 1px solid #4a4a5a;
-            color: #fff;
-            padding: 8px 10px;
-            border-radius: 6px;
-            font-size: 13px;
-            outline: none;
-        }
-
-        /* Full Screen Image Modal Viewer */
-        #fullscreen-modal {
-            position: fixed;
-            top: 0; left: 0; width: 100vw; height: 100vh;
-            background: rgba(0,0,0,0.9);
-            z-index: 9999;
-            display: none;
-            justify-content: center;
-            align-items: center;
-            padding: 40px;
-        }
-        #fullscreen-modal img {
-            max-width: 100%;
-            max-height: 100%;
-            object-fit: contain;
-            border-radius: 4px;
-        }
-        .modal-download-top {
-            position: absolute;
-            top: 20px; right: 20px;
-            background: #6200ee;
-            color: white;
-            padding: 10px 18px;
-            border-radius: 6px;
-            font-weight: bold;
-            text-decoration: none;
-            font-size: 14px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-        .modal-close-top {
-            position: absolute;
-            top: 20px; left: 20px;
-            background: #3a3a4a;
-            color: white;
-            border: none;
-            width: 40px; height: 40px;
-            border-radius: 50%;
-            font-size: 20px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-    </style>
+    /* Footer / Input Bar */
+    .chat-input-container { padding: 0.75rem 1rem; background: #0f172a; border-top: 1px solid #334155; display: flex; gap: 0.5rem; align-items: center; }
+    .chat-input-container input[type="text"] { flex: 1; padding: 0.75rem 1rem; border-radius: 24px; border: 1px solid #475569; background: #1e293b; color: white; outline: none; font-size: 0.95rem; }
+    .icon-btn { cursor: pointer; padding: 0.6rem; background: #334155; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; user-select: none; transition: background 0.2s; }
+    .icon-btn:hover { background: #475569; }
+    .send-btn { padding: 0.6rem 1.2rem; border: none; background: #22c55e; color: white; font-weight: bold; border-radius: 24px; cursor: pointer; font-size: 0.95rem; transition: background 0.2s; }
+    .send-btn:hover { background: #16a34a; }
+  </style>
 </head>
 <body>
 
-    <div class="toolbar">
-        <div class="toolbar-group">
-            <div class="file-input-wrapper">
-                <button id="btn-open-pdf" class="btn" style="background-color: #6200ee; border-color: #7c4dff;">
-                    📂 Open PDF
-                </button>
-                <input type="file" id="file-selector" accept="application/pdf" style="display: none;">
-            </div>
-            <select id="session-select" class="btn" disabled>
-                <option value="" selected hidden>💾 Save/Load Project</option>
-                <option value="export">Export Session (JSON)</option>
-                <option value="import">Import Session (JSON)</option>
-            </select>
-            <input type="file" id="session-file-picker" accept=".json" style="display: none;">
-        </div>
+  <!-- Username Entry Modal -->
+  <div id="modal">
+    <div class="modal-box">
+      <h2>Join Group Chat</h2>
+      <p>Enter your display name to start chatting securely.</p>
+      <input type="text" id="usernameInput" placeholder="e.g. Alex" maxlength="20" autofocus>
+      <button onclick="joinChat()">Enter Room</button>
+    </div>
+  </div>
 
-        <div class="toolbar-divider"></div>
-
-        <div class="toolbar-group">
-            <button class="btn" id="btn-prev" disabled>◀</button>
-            <span class="page-info" id="page-info">Page: 0 / 0</span>
-            <button class="btn" id="btn-next" disabled>▶</button>
-        </div>
-
-        <div class="toolbar-group">
-            <button class="btn" id="btn-zoom-out" disabled>➖</button>
-            <span class="zoom-info" id="zoom-info">100%</span>
-            <button class="btn" id="btn-zoom-in" disabled>➕</button>
-            <button class="btn" id="btn-rotate" disabled title="Rotate Clockwise">🔄 Rotate</button>
-        </div>
-
-        <div class="toolbar-divider"></div>
-
-        <div class="toolbar-group">
-            <input type="text" id="search-input" class="search-input" placeholder="Search text..." disabled>
-            <button class="btn" id="btn-search-prev" disabled>▲</button>
-            <button class="btn" id="btn-search-next" disabled>▼</button>
-            <span id="search-count">0/0</span>
-        </div>
-
-        <div class="toolbar-divider"></div>
-
-        <div class="toolbar-group">
-            <select id="tool-select" class="btn" disabled style="min-width: 170px;">
-                <option value="view">✋ Mode: Pan / View</option>
-                <option value="note">📌 Tool: Sticky Note</option>
-                <option value="pen">✏️ Tool: Brush Pen</option>
-                <option value="rect">⬛ Tool: Box Shape</option>
-                <option value="circle">⚪ Tool: Circle Shape</option>
-                <option value="text">🔤 Tool: Add Page Text</option>
-                <option value="eraser">🧼 Tool: Eraser</option>
-            </select>
-            <input type="color" id="edit-color" value="#ff3b30" title="Select Tool Color" disabled style="width: 32px; height: 32px; border: none; border-radius: 6px; cursor: pointer; background: transparent;">
-            
-            <select id="edit-thickness" class="btn" disabled style="padding: 8px 6px;">
-                <option value="0.5">0.5px</option>
-                <option value="1">1px</option>
-                <option value="2" selected>2px</option>
-                <option value="4">4px</option>
-                <option value="6">6px</option>
-                <option value="10">10px</option>
-            </select>
-            <button class="btn" id="btn-clear-drawings" title="Clear All Vector Edits" disabled style="color: #ff3b30;">🗑️ Clear Page</button>
-        </div>
+  <!-- Chat UI -->
+  <div class="chat-container">
+    <div class="chat-header">
+      <div class="room-title">
+        <h3>Public Group</h3>
+        <span class="e2e-tag">🔒 End-to-End Encrypted</span>
+      </div>
+      <span class="room-badge" id="roomBadge">Room: General</span>
     </div>
 
-    <!-- Dynamic Tab Bar Header -->
-    <div class="tab-bar" id="tab-bar">
-        <div id="tabs-wrapper" class="tabs-wrapper"></div>
-        <button class="add-tab-btn" id="btn-add-tab" title="Open New Tab">+</button>
+    <div class="messages-area" id="messagesArea"></div>
+
+    <div class="chat-input-container">
+      <label class="icon-btn" title="Send Photo or Video">
+        📷
+        <input type="file" id="fileInput" accept="image/*,video/*" style="display:none;" onchange="handleFileUpload(event)">
+      </label>
+      <input type="text" id="messageInput" placeholder="Type a message..." onkeydown="if(event.key==='Enter') sendMessage()">
+      <button class="send-btn" onclick="sendMessage()">Send</button>
     </div>
+  </div>
 
-    <div class="workspace-layout">
-        <div class="viewer-container" id="viewer-container">
-            <div class="placeholder" id="placeholder">
-                <svg viewBox="0 0 24 24">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                    <polyline points="14 2 14 8 20 8"></polyline>
-                    <line x1="9" y1="15" x2="15" y2="15"></line>
-                    <line x1="9" y1="11" x2="15" y2="11"></line>
-                    <line x1="9" y1="17" x2="11" y2="17"></line>
-                </svg>
-                <h3>No PDF loaded</h3>
-                <p style="margin-top: 6px; font-size: 14px;">Click "Open PDF" to begin interacting</p>
-            </div>
+  <script>
+    const hashKey = window.location.hash.substring(1) || 'default-group-room';
+    document.getElementById('roomBadge').textContent = '#' + hashKey;
 
-            <div class="page-wrapper" id="page-wrapper">
-                <canvas id="pdf-canvas"></canvas>
-                <canvas id="drawing-canvas"></canvas>
-                <div class="annotation-layer" id="annotation-layer"></div>
-            </div>
-        </div>
+    const myClientId = Math.random().toString(36).substring(2, 9);
+    let username = 'Anonymous';
+    let cryptoKey = null;
+    let mqttClient = null;
+    
+    let localChatHistory = [];
+    let hasLoadedHistory = false;
+    let hasAnnouncedJoin = false;
+    let lastSystemMessageText = '';
 
-        <!-- E2EE Secure Chat Sidebar -->
-        <div class="chat-sidebar">
-            <div class="chat-header">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span>🔒 End-to-End Encrypted Chat</span>
-                </div>
-                <div id="connection-status" class="connection-status">Disconnected (Ready)</div>
-                <div style="font-size: 11px; color: #a0a0b0;">Your Peer ID:</div>
-                <div class="id-box">
-                    <input type="text" id="my-peer-id" readonly placeholder="Generating ID...">
-                    <button class="btn" id="btn-copy-id" style="padding: 4px 8px; font-size: 11px;">Copy</button>
-                </div>
-                <div style="font-size: 11px; color: #a0a0b0;">Connect to Peer ID:</div>
-                <div class="id-box">
-                    <input type="text" id="target-peer-id" placeholder="Paste peer ID here...">
-                    <button class="btn" id="btn-connect" style="padding: 4px 10px; font-size: 11px; background: #6200ee;">Connect</button>
-                </div>
-            </div>
+    // Derive AES-256 encryption key from URL Hash
+    async function initCryptoKey(secret) {
+      const enc = new TextEncoder();
+      const keyMaterial = await crypto.subtle.digest('SHA-256', enc.encode(secret));
+      return crypto.subtle.importKey('raw', keyMaterial, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+    }
 
-            <div class="chat-messages" id="chat-messages">
-                <div class="message incoming">Welcome! Share your ID with User B or enter theirs to begin a secure encrypted connection.</div>
-            </div>
+    async function encryptPayload(dataObj) {
+      const enc = new TextEncoder();
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const jsonStr = JSON.stringify(dataObj);
+      const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cryptoKey, enc.encode(jsonStr));
+      
+      return JSON.stringify({
+        iv: Array.from(iv),
+        data: Array.from(new Uint8Array(encrypted))
+      });
+    }
 
-            <div class="chat-input-area">
-                <div class="file-input-wrapper">
-                    <button class="btn" id="btn-attach" title="Send File / Photo" disabled style="padding: 8px 10px;">📎</button>
-                    <input type="file" id="chat-file-input" style="display: none;">
-                </div>
-                <input type="text" id="chat-text-input" placeholder="Type a secure message..." disabled>
-                <button class="btn" id="btn-send" disabled style="padding: 8px 12px; background: #6200ee;">Send</button>
-            </div>
-        </div>
-    </div>
+    async function decryptPayload(payloadStr) {
+      try {
+        const payload = JSON.parse(payloadStr);
+        const iv = new Uint8Array(payload.iv);
+        const data = new Uint8Array(payload.data);
+        const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, cryptoKey, data);
+        return JSON.parse(new TextDecoder().decode(decrypted));
+      } catch (e) {
+        return null;
+      }
+    }
 
-    <!-- Fullscreen Image Preview Modal -->
-    <div id="fullscreen-modal">
-        <button class="modal-close-top" id="modal-close-btn">&times;</button>
-        <a id="modal-download-btn" class="modal-download-top" download="image.png">📥 Download Photo</a>
-        <img id="fullscreen-img" src="" alt="Full Screen Preview">
-    </div>
+    async function joinChat() {
+      const nameInput = document.getElementById('usernameInput').value.trim();
+      if (!nameInput) return alert('Please enter a username!');
+      username = nameInput;
+      document.getElementById('modal').style.display = 'none';
 
-    <div class="tip-banner" id="tip-banner">Mode: View | Hold Left-Click & Drag to Pan</div>
+      cryptoKey = await initCryptoKey(hashKey);
+      const topic = `e2ee-webchat-v1/${hashKey}`;
 
-    <script>
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+      mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
+        keepalive: 30,
+        reconnectPeriod: 2000
+      });
 
-        // --- Core Tab Management Engine State Variables ---
-        let activeTabId = 0;
-        let tabIdCounter = 1;
-        let draggedTabId = null;
-        
-        function createNewTabObject(id, labelName) {
-            return {
-                id: id,
-                pdfDoc: null,
-                fileName: labelName || `Tab ${id + 1} (Empty)`,
-                currentPage: 1,
-                currentScale: 1.0,
-                currentRotation: 0,
-                currentViewport: null,
-                notesData: [],
-                drawingsData: [],
-                currentPageItems: [],
-                panX: 0,
-                panY: 0,
-                searchMatches: [],
-                currentMatchIndex: -1,
-                searchSessionCounter: 0,
-                searchInputVal: ""
-            };
+      mqttClient.on('connect', async () => {
+        mqttClient.subscribe(topic);
+
+        // Send "Joined" message ONLY ONCE per session to stop reconnect spam on mobile Chrome
+        if (!hasAnnouncedJoin) {
+          hasAnnouncedJoin = true;
+          const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          await broadcastPayload({
+            sender: username,
+            type: 'presence',
+            action: 'join',
+            time: nowTime
+          });
         }
 
-        let tabs = [createNewTabObject(0, "Tab 1 (Empty)")];
+        // Request chat history from online peers
+        await broadcastPayload({
+          sender: username,
+          type: 'history_request',
+          requesterId: myClientId
+        });
 
-        let currentTool = 'view'; 
-        let isPanning = false;
-        let startX = 0, startY = 0;
-        let isDrawing = false;
-        let currentDrawingItem = null;
+        setTimeout(() => { hasLoadedHistory = true; }, 1500);
+      });
 
-        // DOM Elements Link
-        const btnOpenPdf = document.getElementById('btn-open-pdf');
-        const fileSelector = document.getElementById('file-selector');
-        const sessionSelect = document.getElementById('session-select');
-        const sessionFilePicker = document.getElementById('session-file-picker');
-        
-        const btnPrev = document.getElementById('btn-prev');
-        const btnNext = document.getElementById('btn-next');
-        const btnZoomIn = document.getElementById('btn-zoom-in');
-        const btnZoomOut = document.getElementById('btn-zoom-out');
-        const btnRotate = document.getElementById('btn-rotate');
-        
-        const searchInput = document.getElementById('search-input');
-        const btnSearchPrev = document.getElementById('btn-search-prev');
-        const btnSearchNext = document.getElementById('btn-search-next');
-        const searchCountSpan = document.getElementById('search-count');
+      mqttClient.on('message', async (t, message) => {
+        const decrypted = await decryptPayload(message.toString());
+        if (!decrypted) return;
+        handleIncomingMessage(decrypted);
+      });
+    }
 
-        const toolSelect = document.getElementById('tool-select');
-        const editColor = document.getElementById('edit-color');
-        const editThickness = document.getElementById('edit-thickness');
-        const btnClearDrawings = document.getElementById('btn-clear-drawings');
-
-        const pageInfo = document.getElementById('page-info');
-        const zoomInfo = document.getElementById('zoom-info');
-        const placeholder = document.getElementById('placeholder');
-        const tipBanner = document.getElementById('tip-banner');
-        
-        const viewerContainer = document.getElementById('viewer-container');
-        const pageWrapper = document.getElementById('page-wrapper');
-        const canvas = document.getElementById('pdf-canvas');
-        const drawingCanvas = document.getElementById('drawing-canvas');
-        const annotationLayer = document.getElementById('annotation-layer');
-        
-        const ctx = canvas.getContext('2d');
-        const dCtx = drawingCanvas.getContext('2d');
-        
-        const tabsWrapper = document.getElementById('tabs-wrapper');
-        const btnAddTab = document.getElementById('btn-add-tab');
-
-        // Chat & P2P DOM Elements
-        const myPeerIdInput = document.getElementById('my-peer-id');
-        const btnCopyId = document.getElementById('btn-copy-id');
-        const targetPeerIdInput = document.getElementById('target-peer-id');
-        const btnConnect = document.getElementById('btn-connect');
-        const connectionStatus = document.getElementById('connection-status');
-        const chatMessages = document.getElementById('chat-messages');
-        const chatTextInput = document.getElementById('chat-text-input');
-        const btnSend = document.getElementById('btn-send');
-        const btnAttach = document.getElementById('btn-attach');
-        const chatFileInput = document.getElementById('chat-file-input');
-
-        // Modal Elements
-        const fullscreenModal = document.getElementById('fullscreen-modal');
-        const fullscreenImg = document.getElementById('fullscreen-img');
-        const modalCloseBtn = document.getElementById('modal-close-btn');
-        const modalDownloadBtn = document.getElementById('modal-download-btn');
-
-        // --- P2P & End-to-End Encryption Engine (WebRTC + AES-GCM) ---
-        let pc = null;
-        let dataChannel = null;
-        let encryptionKey = null;
-        let isHost = false;
-        
-        // Using public STUN servers for peer discovery
-        const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-
-        // Generate a cryptographically secure random Room ID for connection
-        function generateRandomId() {
-            return Math.random().toString(36).substring(2, 8).toUpperCase();
+    async function handleIncomingMessage(msg) {
+      if (msg.type === 'history_request') {
+        if (msg.requesterId !== myClientId && localChatHistory.length > 0) {
+          await broadcastPayload({
+            type: 'history_response',
+            targetId: msg.requesterId,
+            history: localChatHistory
+          });
         }
-        
-        const myRoomId = generateRandomId();
-        myPeerIdInput.value = myRoomId;
+        return;
+      }
 
-        // Simple local signaling storage handler using BroadcastChannel or local storage fallback simulation for direct connection ID exchange
-        const signalingChannel = new BroadcastChannel('pdf_secure_chat_' + myRoomId);
-        
-        signalingChannel.onmessage = async (event) => {
-            const data = event.data;
-            if (!pc) createPeerConnection(false);
+      if (msg.type === 'history_response') {
+        if (msg.targetId === myClientId && !hasLoadedHistory) {
+          hasLoadedHistory = true;
+          localChatHistory = msg.history;
+          document.getElementById('messagesArea').innerHTML = '';
+          localChatHistory.forEach(item => renderMessage(item, false));
+        }
+        return;
+      }
 
-            if (data.sdp) {
-                await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-                if (data.sdp.type === 'offer') {
-                    const answer = await pc.createAnswer();
-                    await pc.setLocalDescription(answer);
-                    signalingChannel.postMessage({ sdp: pc.localDescription });
-                }
-            } else if (data.candidate) {
-                try { await pc.addIceCandidate(new RTCIceCandidate(data.candidate)); } catch (e) {}
+      localChatHistory.push(msg);
+      if (localChatHistory.length > 100) localChatHistory.shift();
+
+      renderMessage(msg, true);
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById('messageInput');
+      const text = input.value.trim();
+      if (!text) return;
+
+      const payload = {
+        sender: username,
+        type: 'text',
+        content: text,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+
+      input.value = '';
+      await broadcastPayload(payload);
+    }
+
+    // Canvas Compression function to resize images before sending
+    function compressImage(file, maxWidth = 1000, maxHeight = 1000, quality = 0.65) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+          const img = new Image();
+          img.src = event.target.result;
+          img.onload = () => {
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+              if (width > maxWidth) {
+                height = Math.round((height * maxWidth) / width);
+                width = maxWidth;
+              }
+            } else {
+              if (height > maxHeight) {
+                width = Math.round((width * maxHeight) / height);
+                height = maxHeight;
+              }
             }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', quality));
+          };
+          img.onerror = (err) => reject(err);
         };
+        reader.onerror = (err) => reject(err);
+      });
+    }
 
-        btnCopyId.addEventListener('click', () => {
-            navigator.clipboard.writeText(myPeerIdInput.value);
-            btnCopyId.textContent = "Copied!";
-            setTimeout(() => btnCopyId.textContent = "Copy", 2000);
-        });
+    async function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
 
-        btnConnect.addEventListener('click', () => {
-            const targetId = targetPeerIdInput.value.trim().toUpperCase();
-            if (!targetId) {
-                alert("Please enter a valid peer ID to connect.");
-                return;
-            }
-            if (targetId === myRoomId) {
-                alert("You cannot connect to your own ID.");
-                return;
-            }
-            
-            // Connect to target signaling channel
-            const targetChannel = new BroadcastChannel('pdf_secure_chat_' + targetId);
-            isHost = true;
-            createPeerConnection(true, targetChannel);
-            connectionStatus.textContent = "Connecting to peer...";
-        });
+      const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-        function createPeerConnection(initiator, customChannel) {
-            pc = new RTCPeerConnection(rtcConfig);
-            const channel = customChannel || signalingChannel;
-
-            pc.onicecandidate = (event) => {
-                if (event.candidate) {
-                    channel.postMessage({ candidate: event.candidate });
-                }
-            };
-
-            if (initiator) {
-                dataChannel = pc.createDataChannel("secure-chat");
-                setupDataChannel();
-                pc.createOffer().then(offer => pc.setLocalDescription(offer)).then(() => {
-                    channel.postMessage({ sdp: pc.localDescription });
-                });
-            } else {
-                pc.ondatachannel = (event) => {
-                    dataChannel = event.channel;
-                    setupDataChannel();
-                };
-            }
+      // Handle Photos with automatic canvas compression
+      if (file.type.startsWith('image/')) {
+        try {
+          const compressedDataUrl = await compressImage(file);
+          const payload = {
+            sender: username,
+            type: 'image',
+            content: compressedDataUrl,
+            time: nowTime
+          };
+          await broadcastPayload(payload);
+        } catch (err) {
+          alert("Could not process image. Please try another photo.");
         }
-
-        function setupDataChannel() {
-            dataChannel.onopen = async () => {
-                connectionStatus.textContent = "Connected (Encrypted E2EE)";
-                connectionStatus.classList.add('connected');
-                chatTextInput.disabled = false;
-                btnSend.disabled = false;
-                btnAttach.disabled = false;
-                appendSystemMessage("Secure End-to-End Encrypted connection established successfully.");
-                
-                // Generate and exchange AES Encryption Key
-                if (isHost) {
-                    encryptionKey = await window.crypto.subtle.generateKey(
-                        { name: "AES-GCM", length: 256 },
-                        true,
-                        ["encrypt", "decrypt"]
-                    );
-                    const exportedKey = await window.crypto.subtle.exportKey("jwk", encryptionKey);
-                    dataChannel.send(JSON.stringify({ type: "KEY_EXCHANGE", key: exportedKey }));
-                }
-            };
-
-            dataChannel.onclose = () => {
-                connectionStatus.textContent = "Disconnected";
-                connectionStatus.classList.remove('connected');
-                chatTextInput.disabled = true;
-                btnSend.disabled = true;
-                btnAttach.disabled = true;
-                appendSystemMessage("Connection closed.");
-            };
-
-            dataChannel.onmessage = async (event) => {
-                if (typeof event.data === 'string') {
-                    const packet = JSON.parse(event.data);
-                    if (packet.type === "KEY_EXCHANGE") {
-                        encryptionKey = await window.crypto.subtle.importKey(
-                            "jwk",
-                            packet.key,
-                            { name: "AES-GCM", length: 256 },
-                            true,
-                            ["encrypt", "decrypt"]
-                        );
-                        appendSystemMessage("Cryptographic E2EE session keys secured.");
-                        return;
-                    }
-                    if (packet.type === "TEXT") {
-                        const decryptedText = await decryptData(packet.iv, packet.ciphertext);
-                        appendMessage(decryptedText, 'incoming');
-                    }
-                } else {
-                    // Binary chunk file / photo transfer handling with unlimited size support
-                    handleIncomingFileBinary(event.data);
-                }
-            };
+      } 
+      // Handle Videos (max 2MB limit)
+      else if (file.type.startsWith('video/')) {
+        if (file.size > 2 * 1024 * 1024) {
+          return alert("Video file is too large! Please choose a short clip under 2MB.");
         }
-
-        // Cryptographic Encryption Helpers
-        async function encryptData(text) {
-            const iv = window.crypto.getRandomValues(new Uint8Array(12));
-            const encoded = new TextEncoder().encode(text);
-            const ciphertext = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, encryptionKey, encoded);
-            return { iv: Array.from(iv), ciphertext: Array.from(new Uint8Array(ciphertext)) };
-        }
-
-        async function decryptData(ivArray, cipherArray) {
-            const iv = new Uint8Array(ivArray);
-            const ciphertext = new Uint8Array(cipherArray);
-            const decrypted = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, encryptionKey, ciphertext);
-            return new TextDecoder().decode(decrypted);
-        }
-
-        // --- File & Unlimited Chunk Transfer Mechanism ---
-        let incomingFileMeta = null;
-        let incomingBuffer = [];
-        let incomingReceivedBytes = 0;
-
-        btnAttach.addEventListener('click', () => chatFileInput.click());
-
-        chatFileInput.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            appendMessage(`Sending file: ${file.name} (${(file.size/1024).toFixed(1)} KB)...`, 'outgoing');
-
-            // Send Metadata Header First
-            const metaHeader = JSON.stringify({ type: "FILE_META", name: file.name, size: file.size, fileType: file.type });
-            dataChannel.send(metaHeader);
-
-            // Stream file in 16KB binary chunks with zero size limits
-            const chunkSize = 16384;
-            const reader = new FileReader();
-            let offset = 0;
-
-            reader.onload = async function(evt) {
-                const chunk = evt.target.result;
-                // Encrypt chunk using AES-GCM before sending over P2P DataChannel
-                const iv = window.crypto.getRandomValues(new Uint8Array(12));
-                const encryptedChunk = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, encryptionKey, chunk);
-                
-                // Pack IV + Encrypted Data into binary frame
-                const packet = new Uint8Array(iv.byteLength + encryptedChunk.byteLength);
-                packet.set(iv, 0);
-                packet.set(new Uint8Array(encryptedChunk), iv.byteLength);
-
-                dataChannel.send(packet);
-
-                offset += chunk.byteLength;
-                if (offset < file.size) {
-                    readNextChunk();
-                } else {
-                    appendMessage(`File sent successfully!`, 'outgoing');
-                }
-            };
-
-            function readNextChunk() {
-                const slice = file.slice(offset, offset + chunkSize);
-                reader.readAsArrayBuffer(slice);
-            }
-            readNextChunk();
-            chatFileInput.value = '';
-        });
-
-        async function handleIncomingFileBinary(data) {
-            if (typeof data === 'string') {
-                incomingFileMeta = JSON.parse(data);
-                incomingBuffer = [];
-                incomingReceivedBytes = 0;
-                return;
-            }
-
-            if (incomingFileMeta) {
-                // Decrypt incoming binary chunk
-                const iv = data.slice(0, 12);
-                const encryptedContent = data.slice(12);
-                try {
-                    const decrypted = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, encryptionKey, encryptedContent);
-                    incomingBuffer.push(decrypted);
-                    incomingReceivedBytes += decrypted.byteLength;
-
-                    if (incomingReceivedBytes >= incomingFileMeta.size) {
-                        const completeBlob = new Blob(incomingBuffer, { type: incomingFileMeta.fileType });
-                        displayReceivedFile(incomingFileMeta.name, completeBlob, incomingFileMeta.fileType);
-                        incomingFileMeta = null;
-                        incomingBuffer = [];
-                    }
-                } catch (err) {
-                    console.error("Decryption failed for incoming file chunk", err);
-                }
-            }
-        }
-
-        // Chat Messaging UI Rendering Functions
-        btnSend.addEventListener('click', sendTextMessage);
-        chatTextInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendTextMessage(); });
-
-        async function sendTextMessage() {
-            const text = chatTextInput.value.trim();
-            if (!text || !dataChannel || dataChannel.readyState !== 'open') return;
-
-            const encrypted = await encryptData(text);
-            dataChannel.send(JSON.stringify({ type: "TEXT", iv: encrypted.iv, ciphertext: encrypted.ciphertext }));
-
-            appendMessage(text, 'outgoing');
-            chatTextInput.value = '';
-        }
-
-        function appendMessage(text, type) {
-            const div = document.createElement('div');
-            div.className = `message ${type}`;
-            div.textContent = text;
-            chatMessages.appendChild(div);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-
-        function appendSystemMessage(text) {
-            const div = document.createElement('div');
-            div.className = 'message incoming';
-            div.style.fontStyle = 'italic';
-            div.style.color = '#a0a0b0';
-            div.textContent = text;
-            chatMessages.appendChild(div);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-
-        function displayReceivedFile(filename, blob, fileType) {
-            const url = URL.createObjectURL(blob);
-            const div = document.createElement('div');
-            div.className = 'message incoming';
-
-            if (fileType.startsWith('image/')) {
-                // Photo rendering with thumbnail click to open Full Screen Viewer
-                div.innerHTML = `
-                    <div style="font-size: 11px; margin-bottom: 2px; color: #a0a0b0;">Photo Received: ${filename}</div>
-                    <img src="${url}" alt="${filename}" onclick="openFullscreenPreview('${url}', '${filename}')" title="Click to view full screen">
-                    <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
-                        <a href="${url}" download="${filename}" class="download-btn">📥 Download Photo</a>
-                    </div>
-                `;
-            } else {
-                // File card rendering with Download button
-                div.innerHTML = `
-                    <div style="font-size: 11px; color: #a0a0b0;">File Received</div>
-                    <div class="file-attachment-card">
-                        <span class="file-info-text">📄 ${filename}</span>
-                        <a href="${url}" download="${filename}" class="download-btn">📥 Download</a>
-                    </div>
-                `;
-            }
-
-            chatMessages.appendChild(div);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-
-        // Full Screen Image Modal Handler
-        window.openFullscreenPreview = function(url, filename) {
-            fullscreenImg.src = url;
-            modalDownloadBtn.href = url;
-            modalDownloadBtn.download = filename;
-            fullscreenModal.style.display = 'flex';
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+          const payload = {
+            sender: username,
+            type: 'video',
+            content: e.target.result,
+            time: nowTime
+          };
+          await broadcastPayload(payload);
         };
+        reader.readAsDataURL(file);
+      }
+      
+      event.target.value = '';
+    }
 
-        modalCloseBtn.addEventListener('click', () => { fullscreenModal.style.display = 'none'; });
-        fullscreenModal.addEventListener('click', (e) => { if (e.target === fullscreenModal) fullscreenModal.style.display = 'none'; });
+    async function broadcastPayload(payload) {
+      const encrypted = await encryptPayload(payload);
+      const topic = `e2ee-webchat-v1/${hashKey}`;
+      mqttClient.publish(topic, encrypted);
+    }
 
-        // --- Render Dynamic Tabs Interface Node Loop ---
-        function renderTabsUI() {
-            tabsWrapper.innerHTML = '';
-            tabs.forEach((tab) => {
-                const tabEl = document.createElement('button');
-                tabEl.className = `tab-btn${tab.id === activeTabId ? ' active' : ''}`;
-                tabEl.dataset.id = tab.id;
-                tabEl.draggable = true;
+    function renderMessage(msg, shouldScroll = true) {
+      const container = document.getElementById('messagesArea');
 
-                const textSpan = document.createElement('span');
-                textSpan.className = 'tab-text';
-                textSpan.textContent = tab.fileName;
-                tabEl.appendChild(textSpan);
-
-                const closeX = document.createElement('span');
-                closeX.className = 'close-tab-x';
-                closeX.innerHTML = '&times;';
-                closeX.title = "Close Tab";
-                closeX.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    closeTab(tab.id);
-                });
-                tabEl.appendChild(closeX);
-
-                tabEl.addEventListener('click', () => {
-                    if (tab.id !== activeTabId) switchTab(tab.id);
-                });
-
-                tabEl.addEventListener('dragstart', (e) => {
-                    draggedTabId = tab.id;
-                    tabEl.classList.add('dragging');
-                    e.dataTransfer.effectAllowed = 'move';
-                });
-
-                tabEl.addEventListener('dragover', (e) => { e.preventDefault(); });
-
-                tabEl.addEventListener('drop', (e) => {
-                    e.preventDefault();
-                    const targetId = parseInt(tabEl.dataset.id);
-                    if (draggedTabId === null || draggedTabId === targetId) return;
-
-                    const draggedIndex = tabs.findIndex(t => t.id === draggedTabId);
-                    const targetIndex = tabs.findIndex(t => t.id === targetId);
-
-                    if (draggedIndex !== -1 && targetIndex !== -1) {
-                        const [movedTab] = tabs.splice(draggedIndex, 1);
-                        tabs.splice(targetIndex, 0, movedTab);
-                        renderTabsUI();
-                    }
-                });
-
-                tabEl.addEventListener('dragend', () => {
-                    tabEl.classList.remove('dragging');
-                    draggedTabId = null;
-                });
-
-                tabsWrapper.appendChild(tabEl);
-            });
-        }
-
-        function closeTab(tabId) {
-            const index = tabs.findIndex(t => t.id === tabId);
-            if (index === -1) return;
-
-            const wasActive = (tabId === activeTabId);
-            tabs.splice(index, 1);
-
-            if (tabs.length === 0) {
-                tabIdCounter = 1;
-                tabs.push(createNewTabObject(0, "Tab 1 (Empty)"));
-                activeTabId = 0;
-            } else if (wasActive) {
-                const newIndex = Math.min(index, tabs.length - 1);
-                activeTabId = tabs[newIndex].id;
-            }
-
-            switchTab(activeTabId);
-        }
-
-        function switchTab(tabId) {
-            const oldTab = tabs.find(t => t.id === activeTabId);
-            if (oldTab) oldTab.searchInputVal = searchInput.value;
-
-            activeTabId = tabId;
-            renderTabsUI();
-
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab) return;
-
-            searchInput.value = tab.searchInputVal;
-
-            if (tab.pdfDoc) {
-                placeholder.style.display = 'none';
-                pageWrapper.style.display = 'block';
-                tipBanner.style.display = 'block';
-                pageWrapper.style.transform = `translate(${tab.panX}px, ${tab.panY}px)`;
-                
-                const enabledElements = [sessionSelect, btnPrev, btnNext, btnZoomIn, btnZoomOut, btnRotate, searchInput, btnSearchPrev, btnSearchNext, toolSelect, editColor, editThickness, btnClearDrawings];
-                enabledElements.forEach(el => el.disabled = false);
-
-                updateSearchUI();
-                renderPage(tab.currentPage);
-            } else {
-                placeholder.style.display = 'block';
-                pageWrapper.style.display = 'none';
-                
-                pageInfo.textContent = `Page: 0 / 0`;
-                zoomInfo.textContent = `100%`;
-                searchCountSpan.textContent = "0/0";
-
-                const disabledElements = [sessionSelect, btnPrev, btnNext, btnZoomIn, btnZoomOut, btnRotate, searchInput, btnSearchPrev, btnSearchNext, toolSelect, editColor, editThickness, btnClearDrawings];
-                disabledElements.forEach(el => el.disabled = true);
-
-                dCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
-                annotationLayer.innerHTML = '';
-            }
-        }
-
-        btnAddTab.addEventListener('click', () => {
-            if (tabs.length >= 10) {
-                alert("Maximum limit of 10 tabs reached.");
-                return;
-            }
-            const newId = tabIdCounter++;
-            const newTab = createNewTabObject(newId, `Tab ${tabs.length + 1} (Empty)`);
-            tabs.push(newTab);
-            switchTab(newId);
-        });
-
-        // --- Document File Selection Stream ---
-        btnOpenPdf.addEventListener('click', async () => {
-            if ('showOpenFilePicker' in window) {
-                try {
-                    const [handle] = await window.showOpenFilePicker({
-                        types: [{ description: 'PDF Documents', accept: { 'application/pdf': ['.pdf'] } }]
-                    });
-                    const file = await handle.getFile();
-                    processPdfFile(file);
-                } catch (err) {
-                    if (err.name !== 'AbortError') console.error(err);
-                }
-            } else {
-                fileSelector.click();
-            }
-        });
-
-        fileSelector.addEventListener('change', (e) => { processPdfFile(e.target.files[0]); });
-
-        function processPdfFile(file) {
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab) return;
-
-            if (file && file.type === "application/pdf") {
-                const reader = new FileReader();
-                reader.onload = function(evt) {
-                    const typedarray = new Uint8Array(evt.target.result);
-                    tab.fileName = file.name;
-                    renderTabsUI();
-                    loadPDF(typedarray);
-                };
-                reader.readAsArrayBuffer(file);
-            }
-        }
-
-        async function loadPDF(data) {
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab) return;
-            try {
-                tab.pdfDoc = await pdfjsLib.getDocument({ data: data }).promise;
-                tab.currentPage = 1;
-                tab.currentScale = 1.0;
-                tab.currentRotation = 0;
-                tab.notesData = [];
-                tab.drawingsData = [];
-                tab.searchMatches = [];
-                tab.currentMatchIndex = -1;
-                tab.searchInputVal = '';
-                searchInput.value = '';
-                resetPan();
-                
-                placeholder.style.display = 'none';
-                pageWrapper.style.display = 'block';
-                tipBanner.style.display = 'block';
-                
-                const enabledElements = [sessionSelect, btnPrev, btnNext, btnZoomIn, btnZoomOut, btnRotate, searchInput, btnSearchPrev, btnSearchNext, toolSelect, editColor, editThickness, btnClearDrawings];
-                enabledElements.forEach(el => el.disabled = false);
-                
-                renderPage(tab.currentPage);
-            } catch (error) {
-                alert("Error configuring document engine: " + error.message);
-            }
-        }
-
-        function resetPan() {
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab) return;
-            tab.panX = 0; tab.panY = 0;
-            pageWrapper.style.transform = `translate(0px, 0px)`;
-        }
-
-        async function renderPage(num) {
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab || !tab.pdfDoc) return;
-            const page = await tab.pdfDoc.getPage(num);
-            
-            tab.currentViewport = page.getViewport({ scale: tab.currentScale, rotation: tab.currentRotation });
-            
-            canvas.height = tab.currentViewport.height;
-            canvas.width = tab.currentViewport.width;
-            drawingCanvas.width = tab.currentViewport.width;
-            drawingCanvas.height = tab.currentViewport.height;
-            
-            pageWrapper.style.width = `${tab.currentViewport.width}px`;
-            pageWrapper.style.height = `${tab.currentViewport.height}px`;
-
-            await page.render({ canvasContext: ctx, viewport: tab.currentViewport }).promise;
-            
-            pageInfo.textContent = `Page: ${num} / ${tab.pdfDoc.numPages}`;
-            zoomInfo.textContent = `${Math.round(tab.currentScale * 100)}%`;
-            
-            btnPrev.disabled = (num <= 1);
-            btnNext.disabled = (num >= tab.pdfDoc.numPages);
-            
-            const textContent = await page.getTextContent();
-            tab.currentPageItems = textContent.items;
-            
-            redrawDrawingCanvas();
-            renderNotes(tab.currentViewport);
-        }
-
-        btnZoomIn.addEventListener('click', () => {
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab || tab.currentScale >= 50.0) return; 
-            tab.currentScale = parseFloat((tab.currentScale + 0.50).toFixed(2));
-            renderPage(tab.currentPage);
-        });
-
-        btnZoomOut.addEventListener('click', () => {
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab || tab.currentScale <= 0.25) return; 
-            tab.currentScale = parseFloat((tab.currentScale - 0.50).toFixed(2));
-            if (tab.currentScale < 0.25) tab.currentScale = 0.25;
-            renderPage(tab.currentPage);
-        });
-
-        viewerContainer.addEventListener('wheel', (e) => {
-            if (e.ctrlKey) {
-                e.preventDefault(); 
-                const tab = tabs.find(t => t.id === activeTabId);
-                if (!tab || !tab.pdfDoc) return;
-
-                const oldScale = tab.currentScale;
-                let newScale = tab.currentScale;
-                const zoomFactorStep = 0.15; 
-
-                if (e.deltaY < 0 && newScale < 50.0) newScale = parseFloat((newScale + zoomFactorStep).toFixed(2));
-                else if (e.deltaY > 0 && newScale > 0.25) {
-                    newScale = parseFloat((newScale - zoomFactorStep).toFixed(2));
-                    if (newScale < 0.25) newScale = 0.25;
-                }
-
-                if (newScale !== oldScale) {
-                    const rect = viewerContainer.getBoundingClientRect();
-                    const mouseX = e.clientX - rect.left;
-                    const mouseY = e.clientY - rect.top;
-                    const pageX = mouseX - tab.panX;
-                    const pageY = mouseY - tab.panY;
-
-                    tab.currentScale = newScale;
-                    tab.panX = mouseX - pageX * (newScale / oldScale);
-                    tab.panY = mouseY - pageY * (newScale / oldScale);
-
-                    pageWrapper.style.transform = `translate(${tab.panX}px, ${tab.panY}px)`;
-                    renderPage(tab.currentPage);
-                }
-            }
-        }, { passive: false });
-
-        btnRotate.addEventListener('click', () => {
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab) return;
-            tab.currentRotation = (tab.currentRotation + 90) % 360;
-            renderPage(tab.currentPage);
-        });
-
-        btnPrev.addEventListener('click', () => {
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab || tab.currentPage <= 1) return;
-            tab.currentPage--;
-            resetPan();
-            renderPage(tab.currentPage);
-        });
-
-        btnNext.addEventListener('click', () => {
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab || tab.currentPage >= tab.pdfDoc.numPages) return;
-            tab.currentPage++;
-            resetPan();
-            renderPage(tab.currentPage);
-        });
-
-        viewerContainer.addEventListener('mousedown', (e) => {
-            if (currentTool !== 'view') return;
-            isPanning = true;
-            viewerContainer.classList.add('panning');
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab) return;
-            startX = e.clientX - tab.panX;
-            startY = e.clientY - tab.panY;
-        });
-
-        viewerContainer.addEventListener('mousemove', (e) => {
-            if (!isPanning) return;
-            e.preventDefault();
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab) return;
-            tab.panX = e.clientX - startX;
-            tab.panY = e.clientY - startY;
-            pageWrapper.style.transform = `translate(${tab.panX}px, ${tab.panY}px)`;
-        });
-
-        const stopPanning = () => { isPanning = false; viewerContainer.classList.remove('panning'); };
-        viewerContainer.addEventListener('mouseup', stopPanning);
-        viewerContainer.addEventListener('mouseleave', stopPanning);
-
-        toolSelect.addEventListener('change', (e) => {
-            currentTool = e.target.value;
-            if (currentTool === 'view') {
-                viewerContainer.className = "viewer-container";
-                drawingCanvas.style.pointerEvents = 'none';
-                annotationLayer.style.pointerEvents = 'none';
-                tipBanner.textContent = "Mode: View | Hold Left-Click & Drag to Pan";
-            } else if (currentTool === 'note') {
-                viewerContainer.className = "viewer-container drawing-mode";
-                drawingCanvas.style.pointerEvents = 'none';
-                annotationLayer.style.pointerEvents = 'auto';
-                tipBanner.textContent = "Mode: Sticky Note | Click inside the page to place notes";
-            } else if (currentTool === 'eraser') {
-                viewerContainer.className = "viewer-container drawing-mode";
-                drawingCanvas.style.pointerEvents = 'auto';
-                annotationLayer.style.pointerEvents = 'none';
-                tipBanner.textContent = "Mode: Eraser | Click and drag over drawings to wipe them away";
-            } else {
-                viewerContainer.className = "viewer-container drawing-mode";
-                drawingCanvas.style.pointerEvents = 'auto';
-                annotationLayer.style.pointerEvents = 'none';
-                tipBanner.textContent = `Mode: Drawing Tool | Active Tool: ${currentTool.toUpperCase()}`;
-            }
-        });
-
-        async function performSearch(resetIndex = true) {
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab) return;
-            tab.searchInputVal = searchInput.value;
-            const query = tab.searchInputVal.trim().toLowerCase();
-            
-            if (!query || !tab.pdfDoc) {
-                tab.searchMatches = [];
-                tab.currentMatchIndex = -1;
-                searchCountSpan.textContent = "0/0";
-                redrawDrawingCanvas();
-                return;
-            }
-
-            tab.searchSessionCounter++;
-            const currentSession = tab.searchSessionCounter;
-            let temporaryMatches = [];
-
-            for (let p = 1; p <= tab.pdfDoc.numPages; p++) {
-                if (currentSession !== tab.searchSessionCounter) return;
-                const page = await tab.pdfDoc.getPage(p);
-                const textContent = await page.getTextContent();
-                const pageItems = textContent.items;
-
-                let aggregateText = "";
-                let charMapping = []; 
-
-                for (let i = 0; i < pageItems.length; i++) {
-                    let item = pageItems[i];
-                    for (let j = 0; j < item.str.length; j++) {
-                        aggregateText += item.str[j];
-                        charMapping.push({ itemIndex: i, charIndex: j });
-                    }
-                    aggregateText += " ";
-                    charMapping.push({ itemIndex: i, charIndex: -1 });
-                }
-
-                let startPos = 0;
-                while ((startPos = aggregateText.toLowerCase().indexOf(query, startPos)) !== -1) {
-                    let spannedItems = [];
-                    for (let k = 0; k < query.length; k++) {
-                        let mapRef = charMapping[startPos + k];
-                        if (mapRef && mapRef.charIndex !== -1 && !spannedItems.includes(mapRef.itemIndex)) {
-                            spannedItems.push(mapRef.itemIndex);
-                        }
-                    }
-                    if (spannedItems.length > 0) {
-                        temporaryMatches.push({ pageNum: p, itemIndices: spannedItems, firstItem: pageItems[spannedItems[0]] });
-                    }
-                    startPos += query.length;
-                }
-            }
-
-            if (currentSession !== tab.searchSessionCounter) return;
-            tab.searchMatches = temporaryMatches;
-            tab.currentMatchIndex = resetIndex && tab.searchMatches.length > 0 ? 0 : (tab.searchMatches.length > 0 ? 0 : -1);
-
-            updateSearchUI();
-            if (tab.currentMatchIndex !== -1) {
-                const targetPage = tab.searchMatches[tab.currentMatchIndex].pageNum;
-                if (targetPage !== tab.currentPage) {
-                    tab.currentPage = targetPage;
-                    await renderPage(tab.currentPage);
-                } else {
-                    redrawDrawingCanvas();
-                }
-                if (resetIndex) autoCenterOnMatch();
-            } else {
-                redrawDrawingCanvas();
-            }
-        }
-
-        function updateSearchUI() {
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab) return;
-            searchCountSpan.textContent = tab.searchMatches.length === 0 ? "0/0" : `${tab.currentMatchIndex + 1}/${tab.searchMatches.length}`;
-        }
-
-        function autoCenterOnMatch() {
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab || tab.currentMatchIndex === -1 || !tab.searchMatches[tab.currentMatchIndex]) return;
-            
-            const match = tab.searchMatches[tab.currentMatchIndex];
-            if (match.pageNum !== tab.currentPage) return;
-
-            const item = match.firstItem;
-            const geom = item.transform;
-            const sx = Math.hypot(geom[0], geom[1]) || 1;
-            const pdfCenterX = geom[4] + (item.width / sx) / 2;
-            const pdfCenterY = geom[5] + 0.5;
-            
-            const viewPoint = tab.currentViewport.convertToViewportPoint(pdfCenterX, pdfCenterY);
-            tab.panX = (canvas.width / 2) - viewPoint[0];
-            tab.panY = (canvas.height / 2) - viewPoint[1];
-            pageWrapper.style.transform = `translate(${tab.panX}px, ${tab.panY}px)`;
-        }
-
-        searchInput.addEventListener('input', () => performSearch(true));
+      // Handle Presence Notifications
+      if (msg.type === 'presence') {
+        const sysText = `${msg.sender} ${msg.action === 'join' ? 'joined' : 'left'}`;
         
-        btnSearchNext.addEventListener('click', async () => {
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab || tab.searchMatches.length === 0) return;
-            tab.currentMatchIndex = (tab.currentMatchIndex + 1) % tab.searchMatches.length;
-            updateSearchUI();
-            if (tab.searchMatches[tab.currentMatchIndex].pageNum !== tab.currentPage) {
-                tab.currentPage = tab.searchMatches[tab.currentMatchIndex].pageNum;
-                await renderPage(tab.currentPage);
-            } else redrawDrawingCanvas();
-            autoCenterOnMatch();
-        });
+        // Block duplicate consecutive presence alerts
+        if (lastSystemMessageText === sysText) return;
+        lastSystemMessageText = sysText;
 
-        btnSearchPrev.addEventListener('click', async () => {
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab || tab.searchMatches.length === 0) return;
-            tab.currentMatchIndex = (tab.currentMatchIndex - 1 + tab.searchMatches.length) % tab.searchMatches.length;
-            updateSearchUI();
-            if (tab.searchMatches[tab.currentMatchIndex].pageNum !== tab.currentPage) {
-                tab.currentPage = tab.searchMatches[tab.currentMatchIndex].pageNum;
-                await renderPage(tab.currentPage);
-            } else redrawDrawingCanvas();
-            autoCenterOnMatch();
-        });
+        const sysDiv = document.createElement('div');
+        sysDiv.className = 'system-msg';
+        const icon = msg.action === 'join' ? '🟢' : '🔴';
+        sysDiv.textContent = `${icon} ${msg.sender} ${msg.action === 'join' ? 'joined' : 'left'} the chat at ${msg.time}`;
+        container.appendChild(sysDiv);
+        if (shouldScroll) container.scrollTop = container.scrollHeight;
+        return;
+      }
 
-        function redrawDrawingCanvas() {
-            dCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab || !tab.currentViewport) return;
+      // Reset last system message check when a real text/media arrives
+      lastSystemMessageText = '';
 
-            tab.searchMatches.forEach((match, idx) => {
-                if (match.pageNum !== tab.currentPage) return;
-                dCtx.fillStyle = (idx === tab.currentMatchIndex) ? 'rgba(255, 102, 0, 0.55)' : 'rgba(255, 230, 0, 0.45)';
-                match.itemIndices.forEach(itemIdx => {
-                    let item = tab.currentPageItems[itemIdx];
-                    if (!item) return;
-                    let geom = item.transform, sx = Math.hypot(geom[0], geom[1]) || 1, lw = item.width / sx;
-                    let p1 = tab.currentViewport.convertToViewportPoint(geom[4], geom[5]);
-                    let p2 = tab.currentViewport.convertToViewportPoint(geom[0]*lw + geom[4], geom[1]*lw + geom[5]);
-                    let p3 = tab.currentViewport.convertToViewportPoint(geom[0]*lw + geom[2] + geom[4], geom[1]*lw + geom[3] + geom[5]);
-                    let p4 = tab.currentViewport.convertToViewportPoint(geom[2] + geom[4], geom[3] + geom[5]);
-                    dCtx.beginPath();
-                    dCtx.moveTo(p1[0], p1[1]); dCtx.lineTo(p2[0], p2[1]); dCtx.lineTo(p3[0], p3[1]); dCtx.lineTo(p4[0], p4[1]);
-                    dCtx.closePath(); dCtx.fill();
-                });
-            });
+      const msgDiv = document.createElement('div');
+      const isMine = msg.sender === username;
+      msgDiv.className = `message ${isMine ? 'mine' : 'others'}`;
 
-            tab.drawingsData.filter(d => d.page === tab.currentPage).forEach(drawItemRender);
-            if (currentDrawingItem) drawItemRender(currentDrawingItem);
-        }
+      let contentHtml = '';
+      if (msg.type === 'text') {
+        contentHtml = `<div>${escapeHtml(msg.content)}</div>`;
+      } else if (msg.type === 'image') {
+        contentHtml = `<img src="${msg.content}" class="chat-media" alt="Shared Photo"/>`;
+      } else if (msg.type === 'video') {
+        contentHtml = `<video src="${msg.content}" controls class="chat-media"></video>`;
+      }
 
-        function drawItemRender(draw) {
-            const tab = tabs.find(t => t.id === activeTabId);
-            dCtx.strokeStyle = draw.color; dCtx.fillStyle = draw.color;
-            dCtx.lineWidth = draw.thickness; dCtx.lineCap = 'round'; dCtx.lineJoin = 'round';
+      msgDiv.innerHTML = `
+        <div class="sender-name">${escapeHtml(msg.sender)}</div>
+        ${contentHtml}
+        <div class="time-stamp">${msg.time}</div>
+      `;
 
-            if (draw.type === 'pen' && draw.points.length > 0) {
-                dCtx.beginPath();
-                const p0 = tab.currentViewport.convertToViewportPoint(draw.points[0].pdfX, draw.points[0].pdfY);
-                dCtx.moveTo(p0[0], p0[1]);
-                for (let i = 1; i < draw.points.length; i++) {
-                    const p = tab.currentViewport.convertToViewportPoint(draw.points[i].pdfX, draw.points[i].pdfY);
-                    dCtx.lineTo(p[0], p[1]);
-                }
-                dCtx.stroke();
-            } else if (draw.type === 'rect') {
-                const p1 = tab.currentViewport.convertToViewportPoint(draw.pdfX1, draw.pdfY1);
-                const p2 = tab.currentViewport.convertToViewportPoint(draw.pdfX2, draw.pdfY2);
-                dCtx.strokeRect(p1[0], p1[1], p2[0] - p1[0], p2[1] - p1[1]);
-            } else if (draw.type === 'circle') {
-                const p1 = tab.currentViewport.convertToViewportPoint(draw.pdfX1, draw.pdfY1);
-                const p2 = tab.currentViewport.convertToViewportPoint(draw.pdfX2, draw.pdfY2);
-                const radius = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
-                dCtx.beginPath(); dCtx.arc(p1[0], p1[1], radius, 0, 2 * Math.PI); dCtx.stroke();
-            } else if (draw.type === 'text') {
-                const p = tab.currentViewport.convertToViewportPoint(draw.pdfX, draw.pdfY);
-                dCtx.font = `bold ${Math.max(8, draw.fontSize * tab.currentScale)}px 'Segoe UI', sans-serif`;
-                dCtx.fillText(draw.text, p[0], p[1]);
-            }
-        }
+      container.appendChild(msgDiv);
+      if (shouldScroll) container.scrollTop = container.scrollHeight;
+    }
 
-        function eraseElementsAt(mx, my) {
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab) return;
-            let mutated = false;
-            tab.drawingsData = tab.drawingsData.filter(draw => {
-                if (draw.page !== tab.currentPage) return true;
-                const pt = tab.currentViewport.convertToViewportPoint(draw.pdfX || draw.pdfX1 || 0, draw.pdfY || draw.pdfY1 || 0);
-                if (Math.hypot(pt[0] - mx, pt[1] - my) <= 18) { mutated = true; return false; }
-                return true;
-            });
-            if (mutated) redrawDrawingCanvas();
-        }
-
-        drawingCanvas.addEventListener('mousedown', (e) => {
-            if (currentTool === 'view' || currentTool === 'note') return;
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab || !tab.pdfDoc) return;
-            
-            const rect = drawingCanvas.getBoundingClientRect();
-            const clickX = e.clientX - rect.left, clickY = e.clientY - rect.top;
-
-            if (currentTool === 'eraser') { isDrawing = true; eraseElementsAt(clickX, clickY); return; }
-
-            isDrawing = true;
-            const pdfPoint = tab.currentViewport.convertToPdfPoint(clickX, clickY);
-            const chosenColor = editColor.value, chosenThickness = parseFloat(editThickness.value);
-
-            if (currentTool === 'pen') {
-                currentDrawingItem = { type: 'pen', page: tab.currentPage, color: chosenColor, thickness: chosenThickness, points: [{ pdfX: pdfPoint[0], pdfY: pdfPoint[1] }] };
-            } else if (currentTool === 'rect' || currentTool === 'circle') {
-                currentDrawingItem = { type: currentTool, page: tab.currentPage, color: chosenColor, thickness: chosenThickness, pdfX1: pdfPoint[0], pdfY1: pdfPoint[1], pdfX2: pdfPoint[0], pdfY2: pdfPoint[1] };
-            } else if (currentTool === 'text') {
-                isDrawing = false;
-                setTimeout(() => {
-                    const textString = prompt("Enter text markup to inject:");
-                    if (textString?.trim()) {
-                        tab.drawingsData.push({ type: 'text', page: tab.currentPage, color: chosenColor, thickness: chosenThickness, fontSize: 14, pdfX: pdfPoint[0], pdfY: pdfPoint[1], text: textString });
-                        redrawDrawingCanvas();
-                    }
-                }, 20);
-            }
-        });
-
-        drawingCanvas.addEventListener('mousemove', (e) => {
-            if (!isDrawing) return;
-            const rect = drawingCanvas.getBoundingClientRect();
-            const moveX = e.clientX - rect.left, moveY = e.clientY - rect.top;
-            if (currentTool === 'eraser') { eraseElementsAt(moveX, moveY); return; }
-            if (!currentDrawingItem) return;
-            const tab = tabs.find(t => t.id === activeTabId);
-            const pdfPoint = tab.currentViewport.convertToPdfPoint(moveX, moveY);
-            if (currentDrawingItem.type === 'pen') currentDrawingItem.points.push({ pdfX: pdfPoint[0], pdfY: pdfPoint[1] });
-            else { currentDrawingItem.pdfX2 = pdfPoint[0]; currentDrawingItem.pdfY2 = pdfPoint[1]; }
-            redrawDrawingCanvas();
-        });
-
-        drawingCanvas.addEventListener('mouseup', () => {
-            if (!isDrawing) return;
-            isDrawing = false;
-            if (currentDrawingItem) { tabs.find(t => t.id === activeTabId)?.drawingsData.push(currentDrawingItem); currentDrawingItem = null; }
-            redrawDrawingCanvas();
-        });
-
-        btnClearDrawings.addEventListener('click', () => {
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (tab && confirm("Wipe all drawn graphics on this active page?")) {
-                tab.drawingsData = tab.drawingsData.filter(d => d.page !== tab.currentPage);
-                redrawDrawingCanvas();
-            }
-        });
-
-        annotationLayer.addEventListener('click', (e) => {
-            if (currentTool !== 'note' || e.target.closest('.note-box')) return;
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab || !tab.pdfDoc) return;
-            const rect = annotationLayer.getBoundingClientRect();
-            const pdfPoint = tab.currentViewport.convertToPdfPoint(e.clientX - rect.left, e.clientY - rect.top);
-            tab.notesData.push({ id: Date.now(), page: tab.currentPage, pdfX: pdfPoint[0], pdfY: pdfPoint[1], text: "" });
-            renderNotes(tab.currentViewport);
-            toolSelect.value = 'view';
-            toolSelect.dispatchEvent(new Event('change'));
-        });
-
-        function renderNotes(viewport) {
-            annotationLayer.innerHTML = '';
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab) return;
-            tab.notesData.filter(note => note.page === tab.currentPage).forEach(note => {
-                const viewPoint = viewport.convertToViewportPoint(note.pdfX, note.pdfY);
-                const el = document.createElement('div');
-                el.className = 'note-box';
-                el.style.left = `${viewPoint[0]}px`; el.style.top = `${viewPoint[1]}px`;
-                el.innerHTML = `
-                    <div class="note-header"><span class="note-pin">📌 Note</span><button class="note-close">&times;</button></div>
-                    <textarea class="note-textarea" placeholder="Type comments...">${note.text}</textarea>
-                `;
-                el.querySelector('.note-textarea').addEventListener('input', (e) => { note.text = e.target.value; });
-                el.querySelector('.note-close').addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    tab.notesData = tab.notesData.filter(n => n.id !== note.id);
-                    el.remove();
-                });
-                setupDrag(el, note, viewport);
-                annotationLayer.appendChild(el);
-            });
-        }
-
-        function setupDrag(el, noteObj, viewport) {
-            let startX = 0, startY = 0;
-            el.querySelector('.note-header').addEventListener('mousedown', (e) => {
-                e.preventDefault(); e.stopPropagation();
-                startX = e.clientX; startY = e.clientY;
-                const onMove = (e) => {
-                    const dx = e.clientX - startX, dy = e.clientY - startY;
-                    startX = e.clientX; startY = e.clientY;
-                    const l = el.offsetLeft + dx, t = el.offsetTop + dy;
-                    el.style.left = `${l}px`; el.style.top = `${t}px`;
-                    const pdfPt = viewport.convertToPdfPoint(l, t);
-                    noteObj.pdfX = pdfPt[0]; noteObj.pdfY = pdfPt[1];
-                };
-                const onUp = () => { document.removeEventListener('mouseup', onUp); document.removeEventListener('mousemove', onMove); };
-                document.addEventListener('mouseup', onUp); document.addEventListener('mousemove', onMove);
-            });
-        }
-
-        sessionSelect.addEventListener('change', async (e) => {
-            const action = e.target.value; sessionSelect.value = "";
-            const tab = tabs.find(t => t.id === activeTabId);
-            if (!tab) return;
-            if (action === 'export') {
-                const bundle = { version: "2.0", notes: tab.notesData, drawings: tab.drawingsData };
-                const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
-                const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "workspace_session.json";
-                a.click();
-            } else if (action === 'import') sessionFilePicker.click();
-        });
-
-        sessionFilePicker.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const tab = tabs.find(t => t.id === activeTabId);
-            const reader = new FileReader();
-            reader.onload = (evt) => {
-                try {
-                    const data = JSON.parse(evt.target.result);
-                    if (data.notes && data.drawings) {
-                        tab.notesData = data.notes; tab.drawingsData = data.drawings;
-                        alert("Session imported successfully!");
-                        if (tab.currentViewport) renderPage(tab.currentPage);
-                    }
-                } catch (err) { alert("Import failed."); }
-            };
-            reader.readAsText(file);
-            sessionFilePicker.value = "";
-        });
-
-        switchTab(0);
-    </script>
+    function escapeHtml(str) {
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+  </script>
 </body>
 </html>
