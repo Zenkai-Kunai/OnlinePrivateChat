@@ -245,7 +245,6 @@
       });
     }
 
-    /* Universal Camera Scanner using html5-qrcode */
     async function startQRScanner() {
       document.getElementById('scannerModal').style.display = 'flex';
       html5QrcodeScanner = new Html5Qrcode("reader");
@@ -379,7 +378,8 @@
       reader.onload = async function(e) {
         try {
           const base64Data = e.target.result;
-          const CHUNK_SIZE = 100 * 1024;
+          /* OPTIMIZED FIX: 32KB chunk size for smooth WebSocket streaming */
+          const CHUNK_SIZE = 32 * 1024;
           const totalChunks = Math.ceil(base64Data.length / CHUNK_SIZE);
 
           let fileTypeCategory = 'file';
@@ -408,7 +408,8 @@
 
             const percent = Math.round(((i + 1) / totalChunks) * 100);
             updateProgressUI(tempMsgId, percent);
-            await new Promise(r => setTimeout(r, 15));
+            /* OPTIMIZED FIX: 25ms delay smooths transmission and stops broker throttling */
+            await new Promise(r => setTimeout(r, 25));
           }
 
           const fullMsg = {
@@ -472,10 +473,11 @@
       if (progressText) progressText.textContent = `${percent}%`;
     }
 
+    /* OPTIMIZED FIX: qos: 0 removes delivery acknowledgments & prevents HiveMQ stream pauses */
     async function broadcastPayload(payload) {
       if (!mqttClient || !cryptoKey) return;
       const encrypted = await encryptPayload(payload);
-      mqttClient.publish(`e2ee-hostchat-v8/${activeRoomId}`, encrypted, { qos: 1 });
+      mqttClient.publish(`e2ee-hostchat-v8/${activeRoomId}`, encrypted, { qos: 0 });
     }
 
     function renderMessage(msg, shouldScroll = true) {
