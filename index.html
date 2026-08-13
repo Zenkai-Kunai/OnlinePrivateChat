@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>E2EE Host & Join Private Chat</title>
+  <title>E2EE Secure Private Chat</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
     
     /* Setup Modal */
@@ -15,7 +15,7 @@
     .modal-box h2 { margin-bottom: 0.5rem; color: #38bdf8; }
     .modal-box p { font-size: 0.85rem; color: #94a3b8; margin-bottom: 1rem; }
     .modal-box input { width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: white; margin-bottom: 1rem; outline: none; font-size: 1rem; text-align: center; }
-    .my-room-box { background: #0f172a; padding: 0.75rem; border-radius: 8px; border: 1px dashed #475569; margin-bottom: 1.25rem; font-size: 0.9rem; color: #38bdf8; word-break: break-all; }
+    .my-room-box { background: #0f172a; padding: 0.75rem; border-radius: 8px; border: 1px dashed #475569; margin-bottom: 1.25rem; font-size: 0.9rem; color: #38bdf8; word-break: break-all; user-select: all; cursor: pointer; }
     .modal-box button { width: 100%; padding: 0.75rem; border-radius: 8px; border: none; background: #0284c7; color: white; font-weight: bold; font-size: 1rem; cursor: pointer; transition: background 0.2s; margin-top: 0.5rem; }
     .modal-box button:hover { background: #0369a1; }
     .divider { margin: 1rem 0; border-top: 1px solid #334155; position: relative; }
@@ -23,8 +23,6 @@
 
     /* Chat App Interface */
     .chat-container { width: 100%; max-width: 650px; height: 100vh; display: flex; flex-direction: column; background: #1e293b; border-left: 1px solid #334155; border-right: 1px solid #334155; }
-    
-    /* Header */
     .chat-header { padding: 1rem; background: #0f172a; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; }
     .room-title { display: flex; flex-direction: column; }
     .e2e-tag { color: #22c55e; font-size: 0.75rem; margin-top: 2px; }
@@ -32,43 +30,39 @@
 
     /* Messages Stream */
     .messages-area { flex: 1; padding: 1rem; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; }
-    .message { max-width: 80%; padding: 0.65rem 0.9rem; border-radius: 12px; font-size: 0.95rem; word-break: break-word; }
+    .message { max-width: 80%; padding: 0.65rem 0.9rem; border-radius: 12px; font-size: 0.95rem; word-break: break-word; position: relative; }
     .message.mine { align-self: flex-end; background: #0284c7; color: white; border-bottom-right-radius: 2px; }
     .message.others { align-self: flex-start; background: #334155; color: #f8fafc; border-bottom-left-radius: 2px; }
     .sender-name { font-size: 0.75rem; font-weight: bold; margin-bottom: 0.25rem; color: #7dd3fc; }
     .time-stamp { font-size: 0.65rem; text-align: right; opacity: 0.7; margin-top: 0.3rem; }
     
-    .system-msg { align-self: center; background: #0f172a; color: #94a3b8; font-size: 0.75rem; padding: 0.3rem 0.8rem; border-radius: 12px; border: 1px solid #334155; margin: 0.2rem 0; }
-    
     /* Media elements */
-    .chat-media { max-width: 100%; max-height: 250px; border-radius: 8px; margin-top: 0.5rem; display: block; object-fit: cover; cursor: pointer; transition: opacity 0.2s; }
-    .chat-media:hover { opacity: 0.9; }
-
-    /* File Attachment Box */
-    .file-attachment { background: rgba(0, 0, 0, 0.2); border: 1px solid rgba(255, 255, 255, 0.1); padding: 0.75rem; border-radius: 8px; margin-top: 0.5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-    .file-info { display: flex; flex-direction: column; overflow: hidden; }
+    .chat-media { max-width: 100%; max-height: 250px; border-radius: 8px; margin-top: 0.5rem; display: block; object-fit: cover; cursor: pointer; }
+    
+    /* WhatsApp-Style File Box */
+    .file-attachment { background: rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.1); padding: 0.75rem; border-radius: 8px; margin-top: 0.5rem; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; position: relative; overflow: hidden; min-width: 220px; }
+    .file-info { display: flex; flex-direction: column; overflow: hidden; flex: 1; }
     .file-name { font-weight: 600; font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .file-size { font-size: 0.7rem; opacity: 0.7; }
-    .download-btn { background: #22c55e; color: white; padding: 0.4rem 0.8rem; border-radius: 6px; text-decoration: none; font-size: 0.8rem; font-weight: bold; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; transition: background 0.2s; }
-    .download-btn:hover { background: #16a34a; }
+    .file-size { font-size: 0.7rem; opacity: 0.7; margin-top: 2px; }
+    .download-btn { background: #22c55e; color: white; padding: 0.4rem 0.8rem; border-radius: 6px; text-decoration: none; font-size: 0.8rem; font-weight: bold; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
 
-    /* Loading / Processing Status Banner */
-    #uploadLoader { display: none; padding: 0.6rem 1rem; background: #0284c7; color: white; font-size: 0.85rem; text-align: center; font-weight: 600; border-top: 1px solid #334155; animation: pulse 1.5s infinite; }
-    @keyframes pulse { 0% { opacity: 0.7; } 50% { opacity: 1; } 100% { opacity: 0.7; } }
+    /* WhatsApp Progress Loader Ring Overlay */
+    .upload-progress-wrapper { display: flex; align-items: center; gap: 8px; background: rgba(15, 23, 42, 0.6); padding: 4px 8px; border-radius: 20px; }
+    .progress-spinner { width: 22px; height: 22px; border: 3px solid rgba(255, 255, 255, 0.2); border-top-color: #22c55e; border-radius: 50%; animation: spin 0.8s linear infinite; }
+    .progress-text { font-size: 0.75rem; font-weight: 700; color: #38bdf8; min-width: 32px; text-align: center; }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
 
     /* Fullscreen Image Lightbox Modal */
     #lightbox { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.9); display: none; justify-content: center; align-items: center; z-index: 1000; padding: 2rem; }
     #lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
-    .lightbox-close { position: absolute; top: 20px; left: 20px; background: rgba(255,255,255,0.2); color: white; border: none; width: 40px; height: 40px; border-radius: 50%; font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-    .lightbox-download { position: absolute; top: 20px; right: 20px; background: #22c55e; color: white; padding: 0.5rem 1rem; border-radius: 8px; text-decoration: none; font-weight: bold; display: flex; align-items: center; gap: 6px; }
+    .lightbox-close { position: absolute; top: 20px; left: 20px; background: rgba(255,255,255,0.2); color: white; border: none; width: 40px; height: 40px; border-radius: 50%; font-size: 1.2rem; cursor: pointer; }
+    .lightbox-download { position: absolute; top: 20px; right: 20px; background: #22c55e; color: white; padding: 0.5rem 1rem; border-radius: 8px; text-decoration: none; font-weight: bold; }
 
-    /* Footer / Input Bar */
+    /* Input Footer */
     .chat-input-container { padding: 0.75rem 1rem; background: #0f172a; border-top: 1px solid #334155; display: flex; gap: 0.5rem; align-items: center; }
     .chat-input-container input[type="text"] { flex: 1; padding: 0.75rem 1rem; border-radius: 24px; border: 1px solid #475569; background: #1e293b; color: white; outline: none; font-size: 0.95rem; }
-    .icon-btn { cursor: pointer; padding: 0.6rem; background: #334155; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; user-select: none; transition: background 0.2s; }
-    .icon-btn:hover { background: #475569; }
-    .send-btn { padding: 0.6rem 1.2rem; border: none; background: #22c55e; color: white; font-weight: bold; border-radius: 24px; cursor: pointer; font-size: 0.95rem; transition: background 0.2s; }
-    .send-btn:hover { background: #16a34a; }
+    .icon-btn { cursor: pointer; padding: 0.6rem; background: #334155; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; user-select: none; }
+    .send-btn { padding: 0.6rem 1.2rem; border: none; background: #22c55e; color: white; font-weight: bold; border-radius: 24px; cursor: pointer; font-size: 0.95rem; }
   </style>
 </head>
 <body>
@@ -77,19 +71,19 @@
   <div id="modal">
     <div class="modal-box">
       <h2>Private Room Chat</h2>
-      <p>Your Device's Room ID:</p>
-      <div class="my-room-box" id="myRoomDisplay">Generating Room ID...</div>
+      <p>Your Device's Secure Room ID (Click to copy):</p>
+      <div class="my-room-box" id="myRoomDisplay" onclick="navigator.clipboard.writeText(this.textContent); alert('Copied!');">Generating Room ID...</div>
       
-      <input type="text" id="usernameInput" placeholder="Your Display Name (e.g. Alex)" maxlength="20">
+      <input type="text" id="usernameInput" placeholder="Your Display Name" maxlength="20">
       
-      <div class="divider"><span>OR JOIN SOMEONE ELSE</span></div>
+      <div class="divider"><span>OR JOIN A ROOM</span></div>
       
-      <input type="text" id="targetRoomInput" placeholder="Paste Friend's Room ID Here">
+      <input type="text" id="targetRoomInput" placeholder="Paste Room ID Here">
       <button onclick="connectToChat()">Open / Join Chat</button>
     </div>
   </div>
 
-  <!-- Fullscreen Lightbox for Photos -->
+  <!-- Fullscreen Lightbox -->
   <div id="lightbox">
     <button class="lightbox-close" onclick="closeLightbox()">✕</button>
     <a id="lightboxDownload" class="lightbox-download" download="shared-photo.jpg">📥 Download</a>
@@ -101,28 +95,32 @@
     <div class="chat-header">
       <div class="room-title">
         <h3 id="chatHeaderTitle">Chat Room</h3>
-        <span class="e2e-tag">🔒 End-to-End Encrypted (24h Auto-Delete)</span>
+        <span class="e2e-tag">🔒 End-to-End Encrypted (PBKDF2 + AES-GCM)</span>
       </div>
-      <span class="room-badge" id="roomBadge">Status: Ready</span>
+      <span class="room-badge" id="roomBadge">Status: Disconnected</span>
     </div>
 
     <div class="messages-area" id="messagesArea"></div>
 
-    <div id="uploadLoader">⏳ Preparing and encrypting file... Please keep connection active.</div>
-
     <div class="chat-input-container">
-      <label class="icon-btn" title="Send Any File, Photo or Video" id="fileLabelBtn">
+      <label class="icon-btn" title="Send File (< 1.5MB)">
         📎
         <input type="file" id="fileInput" style="display:none;" onchange="handleFileUpload(event)">
       </label>
       <input type="text" id="messageInput" placeholder="Type a secure message..." onkeydown="if(event.key==='Enter') sendMessage()">
-      <button class="send-btn" id="sendTextBtn" onclick="sendMessage()">Send</button>
+      <button class="send-btn" onclick="sendMessage()">Send</button>
     </div>
   </div>
 
   <script>
-    const myClientId = 'client_' + Math.random().toString(36).substring(2, 9);
-    const myRoomId = 'room_' + Math.random().toString(36).substring(2, 9);
+    function generateSecureId(prefix = '') {
+      const array = new Uint8Array(8);
+      crypto.getRandomValues(array);
+      return prefix + Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+    }
+
+    const myClientId = generateSecureId('client_');
+    const myRoomId = generateSecureId('room_');
     document.getElementById('myRoomDisplay').textContent = myRoomId;
 
     let username = 'Anonymous';
@@ -132,10 +130,15 @@
     let localChatHistory = [];
     let hasLoadedHistory = false;
 
-    async function initCryptoKey(roomId) {
+    const KDF_SALT = new TextEncoder().encode("E2EE_STATIC_SALT_V1");
+
+    async function initCryptoKey(passphrase) {
       const enc = new TextEncoder();
-      const keyMaterial = await crypto.subtle.digest('SHA-256', enc.encode(roomId));
-      return crypto.subtle.importKey('raw', keyMaterial, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+      const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(passphrase), { name: 'PBKDF2' }, false, ['deriveKey']);
+      return crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt: KDF_SALT, iterations: 100000, hash: 'SHA-256' },
+        keyMaterial, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
+      );
     }
 
     async function encryptPayload(dataObj) {
@@ -143,11 +146,7 @@
       const iv = crypto.getRandomValues(new Uint8Array(12));
       const jsonStr = JSON.stringify(dataObj);
       const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cryptoKey, enc.encode(jsonStr));
-      
-      return JSON.stringify({
-        iv: Array.from(iv),
-        data: Array.from(new Uint8Array(encrypted))
-      });
+      return JSON.stringify({ iv: Array.from(iv), data: Array.from(new Uint8Array(encrypted)) });
     }
 
     async function decryptPayload(payloadStr) {
@@ -169,35 +168,26 @@
       if (!nameInput) return alert('Please enter your display name!');
       username = nameInput;
 
-      if (targetInput) {
-        activeRoomId = targetInput;
-      } else {
-        activeRoomId = myRoomId;
-      }
-
+      activeRoomId = targetInput || myRoomId;
       cryptoKey = await initCryptoKey(activeRoomId);
 
       document.getElementById('modal').style.display = 'none';
-      document.getElementById('roomBadge').textContent = targetInput ? 'Connected to: ' + targetInput : 'Hosting Room: ' + myRoomId;
-      document.getElementById('chatHeaderTitle').textContent = targetInput ? 'Chat (Joined Room)' : 'Chat (My Room)';
+      document.getElementById('roomBadge').textContent = 'Connecting...';
+      document.getElementById('chatHeaderTitle').textContent = targetInput ? 'Joined Room' : 'Host Room';
 
       mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
         keepalive: 60,
-        reconnectPeriod: 1000,
+        reconnectPeriod: 2000,
         connectTimeout: 30000
       });
 
-      mqttClient.on('connect', async () => {
-        const topic = `e2ee-hostchat-v5/${activeRoomId}`;
-        mqttClient.subscribe(topic);
+      mqttClient.on('connect', () => {
+        document.getElementById('roomBadge').textContent = 'Connected';
+        mqttClient.subscribe(`e2ee-hostchat-v6/${activeRoomId}`);
 
-        // Request history from peers if we just joined / reconnected
         setTimeout(async () => {
           if (!hasLoadedHistory) {
-            await broadcastPayload({
-              type: 'history_request',
-              requesterId: myClientId
-            });
+            await broadcastPayload({ type: 'history_request', requesterId: myClientId });
           }
         }, 1000);
       });
@@ -212,37 +202,32 @@
     async function handleIncomingMessage(msg) {
       const now = Date.now();
 
-      // Handle history synchronization requests from reconnected peers
-      if (msg.type === 'history_request') {
-        if (msg.requesterId !== myClientId && localChatHistory.length > 0) {
-          await broadcastPayload({
-            type: 'history_response',
-            targetId: msg.requesterId,
-            history: localChatHistory
-          });
-        }
+      if (msg.type === 'history_request' && msg.requesterId !== myClientId && localChatHistory.length > 0) {
+        await broadcastPayload({ type: 'history_response', targetId: msg.requesterId, history: localChatHistory });
         return;
       }
 
-      // Handle history response delivered to us after reconnecting
-      if (msg.type === 'history_response') {
-        if (msg.targetId === myClientId && !hasLoadedHistory) {
-          hasLoadedHistory = true;
-          localChatHistory = msg.history.filter(m => !m.expiresAt || now <= m.expiresAt);
-          document.getElementById('messagesArea').innerHTML = '';
-          localChatHistory.forEach(item => renderMessage(item, false));
-        }
+      if (msg.type === 'history_response' && msg.targetId === myClientId && !hasLoadedHistory) {
+        hasLoadedHistory = true;
+        localChatHistory = msg.history.filter(m => !m.expiresAt || now <= m.expiresAt);
+        document.getElementById('messagesArea').innerHTML = '';
+        localChatHistory.forEach(item => renderMessage(item, false));
         return;
       }
 
-      // Drop expired messages
       if (msg.expiresAt && now > msg.expiresAt) return;
 
-      // Append to local history tracking
-      localChatHistory.push(msg);
-      if (localChatHistory.length > 150) localChatHistory.shift();
+      if (msg.type !== 'history_request' && msg.type !== 'history_response') {
+        // Check if message was already rendered locally via uploading placeholder
+        const existingTemp = document.getElementById(msg.msgId);
+        if (existingTemp) {
+          existingTemp.remove(); // Remove temporary upload preview to avoid duplicate
+        }
 
-      renderMessage(msg, true);
+        localChatHistory.push(msg);
+        if (localChatHistory.length > 100) localChatHistory.shift();
+        renderMessage(msg, true);
+      }
     }
 
     async function sendMessage() {
@@ -252,6 +237,7 @@
 
       const now = Date.now();
       const payload = {
+        msgId: generateSecureId('msg_'),
         sender: username,
         senderId: myClientId,
         type: 'text',
@@ -265,74 +251,114 @@
       await broadcastPayload(payload);
     }
 
+    /* WhatsApp-Style Upload Functionality with Live Percentage */
     async function handleFileUpload(event) {
       const file = event.target.files[0];
       if (!file) return;
 
-      const loader = document.getElementById('uploadLoader');
-      const fileInputElem = document.getElementById('fileInput');
-      const messageInput = document.getElementById('messageInput');
-      
-      loader.style.display = 'block';
-      fileInputElem.disabled = true;
-      messageInput.disabled = true;
+      if (file.size > 1.5 * 1024 * 1024) {
+        alert("File size exceeds 1.5 MB limit for WebSockets payload.");
+        event.target.value = '';
+        return;
+      }
+
+      const tempMsgId = generateSecureId('msg_');
+      const now = Date.now();
+      const formattedTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const formattedSize = formatBytes(file.size);
+
+      // Render temp bubble immediately with 0% progress
+      renderUploadPlaceholder(tempMsgId, file.name, formattedSize, formattedTime);
 
       const reader = new FileReader();
+
+      // Track reading & processing percentage (0% to 80%)
+      reader.onprogress = function(e) {
+        if (e.lengthComputable) {
+          const percent = Math.round((e.loaded / e.total) * 80);
+          updateProgressUI(tempMsgId, percent);
+        }
+      };
+
       reader.onload = async function(e) {
         try {
-          const base64Data = e.target.result;
-          const now = Date.now();
-          const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          updateProgressUI(tempMsgId, 90); // Encrypting state
 
           let fileTypeCategory = 'file';
           if (file.type.startsWith('image/')) fileTypeCategory = 'image';
           else if (file.type.startsWith('video/')) fileTypeCategory = 'video';
 
           const payload = {
+            msgId: tempMsgId,
             sender: username,
             senderId: myClientId,
             type: fileTypeCategory,
-            content: base64Data,
+            content: e.target.result,
             fileName: file.name,
-            fileSize: formatBytes(file.size),
-            time: nowTime,
+            fileSize: formattedSize,
+            time: formattedTime,
             timestamp: now,
             expiresAt: now + (24 * 60 * 60 * 1000)
           };
 
+          updateProgressUI(tempMsgId, 100); // Encryption done, publishing
           await broadcastPayload(payload);
+
         } catch (err) {
-          alert("Error processing file.");
+          alert("Failed to send file.");
+          const elem = document.getElementById(tempMsgId);
+          if (elem) elem.remove();
         } finally {
-          loader.style.display = 'none';
-          fileInputElem.disabled = false;
-          messageInput.disabled = false;
           event.target.value = '';
         }
-      };
-
-      reader.onerror = function() {
-        loader.style.display = 'none';
-        fileInputElem.disabled = false;
-        messageInput.disabled = false;
-        alert("Failed to read file.");
-        event.target.value = '';
       };
 
       reader.readAsDataURL(file);
     }
 
+    function renderUploadPlaceholder(id, fileName, fileSize, time) {
+      const container = document.getElementById('messagesArea');
+      const msgDiv = document.createElement('div');
+      msgDiv.id = id;
+      msgDiv.className = 'message mine';
+
+      msgDiv.innerHTML = `
+        <div class="sender-name">${escapeHtml(username)}</div>
+        <div class="file-attachment">
+          <div class="file-info">
+            <span class="file-name">📄 ${escapeHtml(fileName)}</span>
+            <span class="file-size">${fileSize}</span>
+          </div>
+          <div class="upload-progress-wrapper" id="progress_wrapper_${id}">
+            <div class="progress-spinner"></div>
+            <span class="progress-text" id="progress_text_${id}">0%</span>
+          </div>
+        </div>
+        <div class="time-stamp">${time}</div>
+      `;
+
+      container.appendChild(msgDiv);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function updateProgressUI(id, percent) {
+      const progressText = document.getElementById(`progress_text_${id}`);
+      if (progressText) {
+        progressText.textContent = `${percent}%`;
+      }
+    }
+
     async function broadcastPayload(payload) {
+      if (!mqttClient || !cryptoKey) return;
       const encrypted = await encryptPayload(payload);
-      const topic = `e2ee-hostchat-v5/${activeRoomId}`;
-      mqttClient.publish(topic, encrypted, { qos: 1 });
+      mqttClient.publish(`e2ee-hostchat-v6/${activeRoomId}`, encrypted, { qos: 1 });
     }
 
     function renderMessage(msg, shouldScroll = true) {
-      if (msg.expiresAt && Date.now() > msg.expiresAt) return;
-
       const container = document.getElementById('messagesArea');
       const msgDiv = document.createElement('div');
+      if (msg.msgId) msgDiv.id = msg.msgId;
+      
       const isMine = msg.senderId === myClientId;
       msgDiv.className = `message ${isMine ? 'mine' : 'others'}`;
 
@@ -342,20 +368,16 @@
       } else if (msg.type === 'image') {
         contentHtml = `<img src="${msg.content}" class="chat-media" alt="Photo" onclick="openLightbox('${msg.content}')"/>`;
       } else if (msg.type === 'video') {
-        contentHtml = `
-          <video src="${msg.content}" controls class="chat-media"></video>
-          <div style="margin-top:5px;"><a href="${msg.content}" download="${msg.fileName || 'video.mp4'}" class="download-btn">📥 Download Video</a></div>
-        `;
+        contentHtml = `<video src="${msg.content}" controls class="chat-media"></video>`;
       } else if (msg.type === 'file') {
         contentHtml = `
           <div class="file-attachment">
             <div class="file-info">
-              <span class="file-name">📄 ${escapeHtml(msg.fileName || 'Document')}</span>
+              <span class="file-name">📄 ${escapeHtml(msg.fileName || 'File')}</span>
               <span class="file-size">${msg.fileSize || ''}</span>
             </div>
-            <a href="${msg.content}" download="${msg.fileName || 'download'}" class="download-btn">📥 Download</a>
-          </div>
-        `;
+            <a href="${msg.content}" download="${escapeHtml(msg.fileName || 'download')}" class="download-btn">📥 Download</a>
+          </div>`;
       }
 
       msgDiv.innerHTML = `
@@ -369,28 +391,24 @@
     }
 
     function openLightbox(imgSrc) {
-      const lightbox = document.getElementById('lightbox');
-      const lightboxImg = document.getElementById('lightboxImg');
-      const lightboxDownload = document.getElementById('lightboxDownload');
-      
-      lightboxImg.src = imgSrc;
-      lightboxDownload.href = imgSrc;
-      lightbox.style.display = 'flex';
+      document.getElementById('lightboxImg').src = imgSrc;
+      document.getElementById('lightboxDownload').href = imgSrc;
+      document.getElementById('lightbox').style.display = 'flex';
     }
 
     function closeLightbox() {
       document.getElementById('lightbox').style.display = 'none';
     }
 
-    function formatBytes(bytes, decimals = 2) {
+    function formatBytes(bytes) {
       if (bytes === 0) return '0 Bytes';
-      const k = 1024, dm = decimals < 0 ? 0 : decimals, sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+      const k = 1024, sizes = ['Bytes', 'KB', 'MB', 'GB'];
       const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
     function escapeHtml(str) {
-      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
   </script>
 </body>
