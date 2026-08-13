@@ -5,13 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>E2EE Secure Private Chat</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-  <!-- QR Code Generator Library -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
     
-    /* Setup Modal */
     #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center; z-index: 100; }
     .modal-box { background: #1e293b; padding: 1.5rem; border-radius: 16px; width: 90%; max-width: 420px; text-align: center; border: 1px solid #334155; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
     .modal-box h2 { margin-bottom: 0.25rem; color: #38bdf8; }
@@ -32,19 +30,16 @@
     .divider { margin: 0.75rem 0; border-top: 1px solid #334155; position: relative; }
     .divider span { position: relative; top: -10px; background: #1e293b; padding: 0 10px; font-size: 0.75rem; color: #64748b; }
 
-    /* Scanner Modal */
     #scannerModal { position: fixed; inset: 0; background: rgba(0,0,0,0.95); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 200; padding: 1rem; }
     #videoPreview { width: 100%; max-width: 320px; border-radius: 12px; border: 2px solid #38bdf8; }
     .close-scanner-btn { margin-top: 1rem; background: #ef4444; color: white; border: none; padding: 0.6rem 1.2rem; border-radius: 8px; font-weight: bold; cursor: pointer; }
 
-    /* Chat App Interface */
     .chat-container { width: 100%; max-width: 650px; height: 100vh; display: flex; flex-direction: column; background: #1e293b; border-left: 1px solid #334155; border-right: 1px solid #334155; }
     .chat-header { padding: 1rem; background: #0f172a; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; }
     .room-title { display: flex; flex-direction: column; }
     .e2e-tag { color: #22c55e; font-size: 0.75rem; margin-top: 2px; }
     .room-badge { background: #0369a1; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
 
-    /* Messages Area */
     .messages-area { flex: 1; padding: 1rem; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; }
     .message { max-width: 80%; padding: 0.65rem 0.9rem; border-radius: 12px; font-size: 0.95rem; word-break: break-word; position: relative; }
     .message.mine { align-self: flex-end; background: #0284c7; color: white; border-bottom-right-radius: 2px; }
@@ -78,7 +73,6 @@
 </head>
 <body>
 
-  <!-- Connection Setup Modal -->
   <div id="modal">
     <div class="modal-box">
       <h2>Private Room Chat</h2>
@@ -99,26 +93,23 @@
     </div>
   </div>
 
-  <!-- Camera QR Scanner Overlay -->
   <div id="scannerModal">
     <h3 style="color:#38bdf8; margin-bottom: 0.5rem;">Align QR Code in Frame</h3>
     <video id="videoPreview" autoplay playsinline></video>
     <button class="close-scanner-btn" onclick="stopQRScanner()">Cancel</button>
   </div>
 
-  <!-- Fullscreen Lightbox -->
   <div id="lightbox">
     <button class="lightbox-close" onclick="closeLightbox()">✕</button>
     <a id="lightboxDownload" class="lightbox-download" download="shared-photo.jpg">📥 Download</a>
     <img id="lightboxImg" src="" alt="Full Screen View">
   </div>
 
-  <!-- Chat UI -->
   <div class="chat-container">
     <div class="chat-header">
       <div class="room-title">
         <h3 id="chatHeaderTitle">Chat Room</h3>
-        <span class="e2e-tag">🔒 End-to-End Encrypted (PBKDF2 + AES-GCM)</span>
+        <span class="e2e-tag">🔒 End-to-End Encrypted (Chunk Streaming)</span>
       </div>
       <span class="room-badge" id="roomBadge">Status: Disconnected</span>
     </div>
@@ -126,7 +117,7 @@
     <div class="messages-area" id="messagesArea"></div>
 
     <div class="chat-input-container">
-      <label class="icon-btn" title="Send File (< 1.5MB)">
+      <label class="icon-btn" title="Send Any File Size">
         📎
         <input type="file" id="fileInput" style="display:none;" onchange="handleFileUpload(event)">
       </label>
@@ -136,9 +127,8 @@
   </div>
 
   <script>
-    // 6-Character Short Alphanumeric PIN Generator
     function generateShortPin() {
-      const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'; // Excludes confusing characters like 0, O, 1, I
+      const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
       let result = '';
       const bytes = new Uint8Array(6);
       crypto.getRandomValues(bytes);
@@ -158,18 +148,11 @@
     const myRoomId = generateShortPin();
     document.getElementById('myRoomDisplay').textContent = myRoomId;
 
-    // Build URL Deep Link
     const currentBaseUrl = window.location.href.split('?')[0];
     const roomShareUrl = `${currentBaseUrl}?room=${myRoomId}`;
 
-    // Render QR Code
-    new QRCode(document.getElementById("qrcode"), {
-      text: roomShareUrl,
-      width: 110,
-      height: 110
-    });
+    new QRCode(document.getElementById("qrcode"), { text: roomShareUrl, width: 110, height: 110 });
 
-    // Auto Fill PIN if opening shared link on mobile
     const urlParams = new URLSearchParams(window.location.search);
     const urlRoomPin = urlParams.get('room');
     if (urlRoomPin) {
@@ -184,6 +167,9 @@
     let hasLoadedHistory = false;
     let videoStream = null;
     let scanInterval = null;
+
+    // Stream Reassembly Buffer
+    const incomingChunks = {}; 
 
     const KDF_SALT = new TextEncoder().encode("E2EE_STATIC_SALT_V1");
 
@@ -243,7 +229,7 @@
 
       mqttClient.on('connect', () => {
         document.getElementById('roomBadge').textContent = 'Connected';
-        mqttClient.subscribe(`e2ee-hostchat-v7/${activeRoomId}`);
+        mqttClient.subscribe(`e2ee-hostchat-v8/${activeRoomId}`);
 
         setTimeout(async () => {
           if (!hasLoadedHistory) {
@@ -259,10 +245,9 @@
       });
     }
 
-    /* Camera QR Code Scanner logic */
     async function startQRScanner() {
       if (!('BarcodeDetector' in window)) {
-        alert("Native camera QR scanning isn't supported on this browser. Please type the 6-digit PIN manually!");
+        alert("Native camera QR scanning isn't supported on this browser.");
         return;
       }
 
@@ -285,21 +270,18 @@
               }
               document.getElementById('targetRoomInput').value = detectedPin.toUpperCase();
               stopQRScanner();
-              alert(`Scanned Room PIN: ${detectedPin}`);
             }
           } catch (err) {}
         }, 500);
 
       } catch (err) {
-        alert("Camera permission denied or camera not available.");
+        alert("Camera access failed.");
         stopQRScanner();
       }
     }
 
     function stopQRScanner() {
-      if (videoStream) {
-        videoStream.getTracks().forEach(track => track.stop());
-      }
+      if (videoStream) videoStream.getTracks().forEach(track => track.stop());
       if (scanInterval) clearInterval(scanInterval);
       document.getElementById('scannerModal').style.display = 'none';
     }
@@ -317,6 +299,40 @@
         localChatHistory = msg.history.filter(m => !m.expiresAt || now <= m.expiresAt);
         document.getElementById('messagesArea').innerHTML = '';
         localChatHistory.forEach(item => renderMessage(item, false));
+        return;
+      }
+
+      // Handle File Chunks for unlimited size transfer
+      if (msg.type === 'file_chunk') {
+        const { msgId, chunkIndex, totalChunks, chunkData } = msg;
+
+        if (msg.senderId !== myClientId) {
+          if (!incomingChunks[msgId]) {
+            incomingChunks[msgId] = { chunks: [], total: totalChunks, meta: msg };
+            renderUploadPlaceholder(msgId, msg.fileName, msg.fileSize, msg.time, msg.sender, false);
+          }
+
+          incomingChunks[msgId].chunks[chunkIndex] = chunkData;
+          const receivedCount = incomingChunks[msgId].chunks.filter(Boolean).length;
+          const percent = Math.round((receivedCount / totalChunks) * 100);
+          updateProgressUI(msgId, percent);
+
+          if (receivedCount === totalChunks) {
+            const completeBase64 = incomingChunks[msgId].chunks.join('');
+            const assembledMsg = {
+              ...incomingChunks[msgId].meta,
+              type: msg.fileTypeCategory,
+              content: completeBase64
+            };
+            delete incomingChunks[msgId];
+
+            const tempElem = document.getElementById(msgId);
+            if (tempElem) tempElem.remove();
+
+            localChatHistory.push(assembledMsg);
+            renderMessage(assembledMsg, true);
+          }
+        }
         return;
       }
 
@@ -353,46 +369,61 @@
       await broadcastPayload(payload);
     }
 
+    /* Unlimited File Upload using 100KB Chunking Stream */
     async function handleFileUpload(event) {
       const file = event.target.files[0];
       if (!file) return;
-
-      if (file.size > 1.5 * 1024 * 1024) {
-        alert("File size exceeds 1.5 MB limit.");
-        event.target.value = '';
-        return;
-      }
 
       const tempMsgId = generateSecureId('msg_');
       const now = Date.now();
       const formattedTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       const formattedSize = formatBytes(file.size);
 
-      renderUploadPlaceholder(tempMsgId, file.name, formattedSize, formattedTime);
+      renderUploadPlaceholder(tempMsgId, file.name, formattedSize, formattedTime, username, true);
 
       const reader = new FileReader();
-
-      reader.onprogress = function(e) {
-        if (e.lengthComputable) {
-          const percent = Math.round((e.loaded / e.total) * 80);
-          updateProgressUI(tempMsgId, percent);
-        }
-      };
-
       reader.onload = async function(e) {
         try {
-          updateProgressUI(tempMsgId, 90);
+          const base64Data = e.target.result;
+          const CHUNK_SIZE = 100 * 1024; // 100KB safe chunk size
+          const totalChunks = Math.ceil(base64Data.length / CHUNK_SIZE);
 
           let fileTypeCategory = 'file';
           if (file.type.startsWith('image/')) fileTypeCategory = 'image';
           else if (file.type.startsWith('video/')) fileTypeCategory = 'video';
 
-          const payload = {
+          for (let i = 0; i < totalChunks; i++) {
+            const chunkData = base64Data.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+            const chunkPayload = {
+              type: 'file_chunk',
+              msgId: tempMsgId,
+              sender: username,
+              senderId: myClientId,
+              fileName: file.name,
+              fileSize: formattedSize,
+              fileTypeCategory: fileTypeCategory,
+              chunkIndex: i,
+              totalChunks: totalChunks,
+              chunkData: chunkData,
+              time: formattedTime,
+              timestamp: now,
+              expiresAt: now + (24 * 60 * 60 * 1000)
+            };
+
+            await broadcastPayload(chunkPayload);
+
+            const percent = Math.round(((i + 1) / totalChunks) * 100);
+            updateProgressUI(tempMsgId, percent);
+            await new Promise(r => setTimeout(r, 15)); // Throttle WebSocket backpressure
+          }
+
+          // Local delivery assembly
+          const fullMsg = {
             msgId: tempMsgId,
             sender: username,
             senderId: myClientId,
             type: fileTypeCategory,
-            content: e.target.result,
+            content: base64Data,
             fileName: file.name,
             fileSize: formattedSize,
             time: formattedTime,
@@ -400,11 +431,14 @@
             expiresAt: now + (24 * 60 * 60 * 1000)
           };
 
-          updateProgressUI(tempMsgId, 100);
-          await broadcastPayload(payload);
+          const tempElem = document.getElementById(tempMsgId);
+          if (tempElem) tempElem.remove();
+
+          localChatHistory.push(fullMsg);
+          renderMessage(fullMsg, true);
 
         } catch (err) {
-          alert("Failed to send file.");
+          alert("Failed to stream file.");
           const elem = document.getElementById(tempMsgId);
           if (elem) elem.remove();
         } finally {
@@ -415,14 +449,14 @@
       reader.readAsDataURL(file);
     }
 
-    function renderUploadPlaceholder(id, fileName, fileSize, time) {
+    function renderUploadPlaceholder(id, fileName, fileSize, time, sender, isMine) {
       const container = document.getElementById('messagesArea');
       const msgDiv = document.createElement('div');
       msgDiv.id = id;
-      msgDiv.className = 'message mine';
+      msgDiv.className = `message ${isMine ? 'mine' : 'others'}`;
 
       msgDiv.innerHTML = `
-        <div class="sender-name">${escapeHtml(username)}</div>
+        <div class="sender-name">${escapeHtml(sender)}</div>
         <div class="file-attachment">
           <div class="file-info">
             <span class="file-name">📄 ${escapeHtml(fileName)}</span>
@@ -448,7 +482,7 @@
     async function broadcastPayload(payload) {
       if (!mqttClient || !cryptoKey) return;
       const encrypted = await encryptPayload(payload);
-      mqttClient.publish(`e2ee-hostchat-v7/${activeRoomId}`, encrypted, { qos: 1 });
+      mqttClient.publish(`e2ee-hostchat-v8/${activeRoomId}`, encrypted, { qos: 1 });
     }
 
     function renderMessage(msg, shouldScroll = true) {
