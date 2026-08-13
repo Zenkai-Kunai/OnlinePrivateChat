@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>E2EE Secure Private Chat</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <!-- Universal QR Generator & Scanner Libraries -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
@@ -30,8 +32,9 @@
     .divider { margin: 0.75rem 0; border-top: 1px solid #334155; position: relative; }
     .divider span { position: relative; top: -10px; background: #1e293b; padding: 0 10px; font-size: 0.75rem; color: #64748b; }
 
+    /* Scanner Modal Window */
     #scannerModal { position: fixed; inset: 0; background: rgba(0,0,0,0.95); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 200; padding: 1rem; }
-    #videoPreview { width: 100%; max-width: 320px; border-radius: 12px; border: 2px solid #38bdf8; }
+    #reader { width: 100%; max-width: 320px; border-radius: 12px; overflow: hidden; border: 2px solid #38bdf8; background: #000; }
     .close-scanner-btn { margin-top: 1rem; background: #ef4444; color: white; border: none; padding: 0.6rem 1.2rem; border-radius: 8px; font-weight: bold; cursor: pointer; }
 
     .chat-container { width: 100%; max-width: 650px; height: 100vh; display: flex; flex-direction: column; background: #1e293b; border-left: 1px solid #334155; border-right: 1px solid #334155; }
@@ -95,7 +98,7 @@
 
   <div id="scannerModal">
     <h3 style="color:#38bdf8; margin-bottom: 0.5rem;">Align QR Code in Frame</h3>
-    <video id="videoPreview" autoplay playsinline></video>
+    <div id="reader"></div>
     <button class="close-scanner-btn" onclick="stopQRScanner()">Cancel</button>
   </div>
 
@@ -165,12 +168,9 @@
     let mqttClient = null;
     let localChatHistory = [];
     let hasLoadedHistory = false;
-    let videoStream = null;
-    let scanInterval = null;
+    let html5QrcodeScanner = null;
 
-    // Stream Reassembly Buffer
     const incomingChunks = {}; 
-
     const KDF_SALT = new TextEncoder().encode("E2EE_STATIC_SALT_V1");
 
     function copyRoomCode() {
@@ -245,44 +245,40 @@
       });
     }
 
+    /* Universal Camera Scanner using html5-qrcode */
     async function startQRScanner() {
-      if (!('BarcodeDetector' in window)) {
-        alert("Native camera QR scanning isn't supported on this browser.");
-        return;
-      }
-
       document.getElementById('scannerModal').style.display = 'flex';
-      const video = document.getElementById('videoPreview');
+      html5QrcodeScanner = new Html5Qrcode("reader");
+
+      const config = { fps: 10, qrbox: { width: 220, height: 220 } };
 
       try {
-        videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        video.srcObject = videoStream;
-
-        const barcodeDetector = new BarcodeDetector({ formats: ['qr_code'] });
-        scanInterval = setInterval(async () => {
-          try {
-            const barcodes = await barcodeDetector.detect(video);
-            if (barcodes.length > 0) {
-              const rawUrl = barcodes[0].rawValue;
-              let detectedPin = rawUrl;
-              if (rawUrl.includes('?room=')) {
-                detectedPin = new URL(rawUrl).searchParams.get('room');
-              }
-              document.getElementById('targetRoomInput').value = detectedPin.toUpperCase();
-              stopQRScanner();
+        await html5QrcodeScanner.start(
+          { facingMode: "environment" },
+          config,
+          (decodedText) => {
+            let detectedPin = decodedText;
+            if (decodedText.includes('?room=')) {
+              detectedPin = new URL(decodedText).searchParams.get('room');
             }
-          } catch (err) {}
-        }, 500);
-
+            document.getElementById('targetRoomInput').value = detectedPin.toUpperCase();
+            stopQRScanner();
+          },
+          (errorMessage) => {}
+        );
       } catch (err) {
-        alert("Camera access failed.");
+        alert("Camera permission denied or camera unavailable.");
         stopQRScanner();
       }
     }
 
-    function stopQRScanner() {
-      if (videoStream) videoStream.getTracks().forEach(track => track.stop());
-      if (scanInterval) clearInterval(scanInterval);
+    async function stopQRScanner() {
+      if (html5QrcodeScanner) {
+        try {
+          await html5QrcodeScanner.stop();
+          html5QrcodeScanner.clear();
+        } catch (e) {}
+      }
       document.getElementById('scannerModal').style.display = 'none';
     }
 
@@ -302,7 +298,6 @@
         return;
       }
 
-      // Handle File Chunks for unlimited size transfer
       if (msg.type === 'file_chunk') {
         const { msgId, chunkIndex, totalChunks, chunkData } = msg;
 
@@ -369,7 +364,6 @@
       await broadcastPayload(payload);
     }
 
-    /* Unlimited File Upload using 100KB Chunking Stream */
     async function handleFileUpload(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -385,7 +379,7 @@
       reader.onload = async function(e) {
         try {
           const base64Data = e.target.result;
-          const CHUNK_SIZE = 100 * 1024; // 100KB safe chunk size
+          const CHUNK_SIZE = 100 * 1024;
           const totalChunks = Math.ceil(base64Data.length / CHUNK_SIZE);
 
           let fileTypeCategory = 'file';
@@ -414,10 +408,9 @@
 
             const percent = Math.round(((i + 1) / totalChunks) * 100);
             updateProgressUI(tempMsgId, percent);
-            await new Promise(r => setTimeout(r, 15)); // Throttle WebSocket backpressure
+            await new Promise(r => setTimeout(r, 15));
           }
 
-          // Local delivery assembly
           const fullMsg = {
             msgId: tempMsgId,
             sender: username,
