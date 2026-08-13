@@ -5,21 +5,37 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>E2EE Secure Private Chat</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <!-- QR Code Generator Library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
     
     /* Setup Modal */
     #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center; z-index: 100; }
-    .modal-box { background: #1e293b; padding: 2rem; border-radius: 16px; width: 90%; max-width: 420px; text-align: center; border: 1px solid #334155; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
-    .modal-box h2 { margin-bottom: 0.5rem; color: #38bdf8; }
-    .modal-box p { font-size: 0.85rem; color: #94a3b8; margin-bottom: 1rem; }
-    .modal-box input { width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: white; margin-bottom: 1rem; outline: none; font-size: 1rem; text-align: center; }
-    .my-room-box { background: #0f172a; padding: 0.75rem; border-radius: 8px; border: 1px dashed #475569; margin-bottom: 1.25rem; font-size: 0.9rem; color: #38bdf8; word-break: break-all; user-select: all; cursor: pointer; }
-    .modal-box button { width: 100%; padding: 0.75rem; border-radius: 8px; border: none; background: #0284c7; color: white; font-weight: bold; font-size: 1rem; cursor: pointer; transition: background 0.2s; margin-top: 0.5rem; }
+    .modal-box { background: #1e293b; padding: 1.5rem; border-radius: 16px; width: 90%; max-width: 420px; text-align: center; border: 1px solid #334155; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+    .modal-box h2 { margin-bottom: 0.25rem; color: #38bdf8; }
+    .modal-box p { font-size: 0.85rem; color: #94a3b8; margin-bottom: 0.75rem; }
+    
+    .room-display-container { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; margin-bottom: 1rem; }
+    .my-room-box { background: #0f172a; padding: 0.6rem 1rem; border-radius: 8px; border: 1px dashed #38bdf8; font-size: 1.2rem; font-weight: bold; letter-spacing: 3px; color: #38bdf8; user-select: all; cursor: pointer; width: 100%; }
+    
+    #qrcode { background: white; padding: 8px; border-radius: 8px; display: inline-block; margin-top: 0.25rem; }
+    
+    .modal-box input { width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: white; margin-bottom: 0.75rem; outline: none; font-size: 1rem; text-align: center; }
+    .modal-box button { width: 100%; padding: 0.75rem; border-radius: 8px; border: none; background: #0284c7; color: white; font-weight: bold; font-size: 1rem; cursor: pointer; transition: background 0.2s; }
     .modal-box button:hover { background: #0369a1; }
-    .divider { margin: 1rem 0; border-top: 1px solid #334155; position: relative; }
+    
+    .scan-btn { background: #334155 !important; margin-bottom: 0.75rem; }
+    .scan-btn:hover { background: #475569 !important; }
+
+    .divider { margin: 0.75rem 0; border-top: 1px solid #334155; position: relative; }
     .divider span { position: relative; top: -10px; background: #1e293b; padding: 0 10px; font-size: 0.75rem; color: #64748b; }
+
+    /* Scanner Modal */
+    #scannerModal { position: fixed; inset: 0; background: rgba(0,0,0,0.95); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 200; padding: 1rem; }
+    #videoPreview { width: 100%; max-width: 320px; border-radius: 12px; border: 2px solid #38bdf8; }
+    .close-scanner-btn { margin-top: 1rem; background: #ef4444; color: white; border: none; padding: 0.6rem 1.2rem; border-radius: 8px; font-weight: bold; cursor: pointer; }
 
     /* Chat App Interface */
     .chat-container { width: 100%; max-width: 650px; height: 100vh; display: flex; flex-direction: column; background: #1e293b; border-left: 1px solid #334155; border-right: 1px solid #334155; }
@@ -28,7 +44,7 @@
     .e2e-tag { color: #22c55e; font-size: 0.75rem; margin-top: 2px; }
     .room-badge { background: #0369a1; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
 
-    /* Messages Stream */
+    /* Messages Area */
     .messages-area { flex: 1; padding: 1rem; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; }
     .message { max-width: 80%; padding: 0.65rem 0.9rem; border-radius: 12px; font-size: 0.95rem; word-break: break-word; position: relative; }
     .message.mine { align-self: flex-end; background: #0284c7; color: white; border-bottom-right-radius: 2px; }
@@ -36,29 +52,24 @@
     .sender-name { font-size: 0.75rem; font-weight: bold; margin-bottom: 0.25rem; color: #7dd3fc; }
     .time-stamp { font-size: 0.65rem; text-align: right; opacity: 0.7; margin-top: 0.3rem; }
     
-    /* Media elements */
     .chat-media { max-width: 100%; max-height: 250px; border-radius: 8px; margin-top: 0.5rem; display: block; object-fit: cover; cursor: pointer; }
     
-    /* WhatsApp-Style File Box */
-    .file-attachment { background: rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.1); padding: 0.75rem; border-radius: 8px; margin-top: 0.5rem; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; position: relative; overflow: hidden; min-width: 220px; }
+    .file-attachment { background: rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.1); padding: 0.75rem; border-radius: 8px; margin-top: 0.5rem; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; min-width: 220px; }
     .file-info { display: flex; flex-direction: column; overflow: hidden; flex: 1; }
     .file-name { font-weight: 600; font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .file-size { font-size: 0.7rem; opacity: 0.7; margin-top: 2px; }
     .download-btn { background: #22c55e; color: white; padding: 0.4rem 0.8rem; border-radius: 6px; text-decoration: none; font-size: 0.8rem; font-weight: bold; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
 
-    /* WhatsApp Progress Loader Ring Overlay */
     .upload-progress-wrapper { display: flex; align-items: center; gap: 8px; background: rgba(15, 23, 42, 0.6); padding: 4px 8px; border-radius: 20px; }
     .progress-spinner { width: 22px; height: 22px; border: 3px solid rgba(255, 255, 255, 0.2); border-top-color: #22c55e; border-radius: 50%; animation: spin 0.8s linear infinite; }
     .progress-text { font-size: 0.75rem; font-weight: 700; color: #38bdf8; min-width: 32px; text-align: center; }
     @keyframes spin { 100% { transform: rotate(360deg); } }
 
-    /* Fullscreen Image Lightbox Modal */
     #lightbox { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.9); display: none; justify-content: center; align-items: center; z-index: 1000; padding: 2rem; }
     #lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
     .lightbox-close { position: absolute; top: 20px; left: 20px; background: rgba(255,255,255,0.2); color: white; border: none; width: 40px; height: 40px; border-radius: 50%; font-size: 1.2rem; cursor: pointer; }
     .lightbox-download { position: absolute; top: 20px; right: 20px; background: #22c55e; color: white; padding: 0.5rem 1rem; border-radius: 8px; text-decoration: none; font-weight: bold; }
 
-    /* Input Footer */
     .chat-input-container { padding: 0.75rem 1rem; background: #0f172a; border-top: 1px solid #334155; display: flex; gap: 0.5rem; align-items: center; }
     .chat-input-container input[type="text"] { flex: 1; padding: 0.75rem 1rem; border-radius: 24px; border: 1px solid #475569; background: #1e293b; color: white; outline: none; font-size: 0.95rem; }
     .icon-btn { cursor: pointer; padding: 0.6rem; background: #334155; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; user-select: none; }
@@ -71,16 +82,28 @@
   <div id="modal">
     <div class="modal-box">
       <h2>Private Room Chat</h2>
-      <p>Your Device's Secure Room ID (Click to copy):</p>
-      <div class="my-room-box" id="myRoomDisplay" onclick="navigator.clipboard.writeText(this.textContent); alert('Copied!');">Generating Room ID...</div>
+      <p>Scan QR code with phone camera or copy PIN:</p>
+      
+      <div class="room-display-container">
+        <div class="my-room-box" id="myRoomDisplay" onclick="copyRoomCode()">------</div>
+        <div id="qrcode"></div>
+      </div>
       
       <input type="text" id="usernameInput" placeholder="Your Display Name" maxlength="20">
       
       <div class="divider"><span>OR JOIN A ROOM</span></div>
       
-      <input type="text" id="targetRoomInput" placeholder="Paste Room ID Here">
+      <button class="scan-btn" onclick="startQRScanner()">📷 Scan Friend's QR Code</button>
+      <input type="text" id="targetRoomInput" placeholder="Enter 6-Digit Room PIN" style="text-transform: uppercase;" maxlength="6">
       <button onclick="connectToChat()">Open / Join Chat</button>
     </div>
+  </div>
+
+  <!-- Camera QR Scanner Overlay -->
+  <div id="scannerModal">
+    <h3 style="color:#38bdf8; margin-bottom: 0.5rem;">Align QR Code in Frame</h3>
+    <video id="videoPreview" autoplay playsinline></video>
+    <button class="close-scanner-btn" onclick="stopQRScanner()">Cancel</button>
   </div>
 
   <!-- Fullscreen Lightbox -->
@@ -113,6 +136,18 @@
   </div>
 
   <script>
+    // 6-Character Short Alphanumeric PIN Generator
+    function generateShortPin() {
+      const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'; // Excludes confusing characters like 0, O, 1, I
+      let result = '';
+      const bytes = new Uint8Array(6);
+      crypto.getRandomValues(bytes);
+      for (let i = 0; i < 6; i++) {
+        result += chars[bytes[i] % chars.length];
+      }
+      return result;
+    }
+
     function generateSecureId(prefix = '') {
       const array = new Uint8Array(8);
       crypto.getRandomValues(array);
@@ -120,8 +155,26 @@
     }
 
     const myClientId = generateSecureId('client_');
-    const myRoomId = generateSecureId('room_');
+    const myRoomId = generateShortPin();
     document.getElementById('myRoomDisplay').textContent = myRoomId;
+
+    // Build URL Deep Link
+    const currentBaseUrl = window.location.href.split('?')[0];
+    const roomShareUrl = `${currentBaseUrl}?room=${myRoomId}`;
+
+    // Render QR Code
+    new QRCode(document.getElementById("qrcode"), {
+      text: roomShareUrl,
+      width: 110,
+      height: 110
+    });
+
+    // Auto Fill PIN if opening shared link on mobile
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlRoomPin = urlParams.get('room');
+    if (urlRoomPin) {
+      document.getElementById('targetRoomInput').value = urlRoomPin.toUpperCase();
+    }
 
     let username = 'Anonymous';
     let activeRoomId = myRoomId;
@@ -129,8 +182,15 @@
     let mqttClient = null;
     let localChatHistory = [];
     let hasLoadedHistory = false;
+    let videoStream = null;
+    let scanInterval = null;
 
     const KDF_SALT = new TextEncoder().encode("E2EE_STATIC_SALT_V1");
+
+    function copyRoomCode() {
+      navigator.clipboard.writeText(myRoomId);
+      alert(`Copied Room PIN: ${myRoomId}\nOr share URL: ${roomShareUrl}`);
+    }
 
     async function initCryptoKey(passphrase) {
       const enc = new TextEncoder();
@@ -163,7 +223,7 @@
 
     async function connectToChat() {
       const nameInput = document.getElementById('usernameInput').value.trim();
-      const targetInput = document.getElementById('targetRoomInput').value.trim();
+      const targetInput = document.getElementById('targetRoomInput').value.trim().toUpperCase();
 
       if (!nameInput) return alert('Please enter your display name!');
       username = nameInput;
@@ -173,7 +233,7 @@
 
       document.getElementById('modal').style.display = 'none';
       document.getElementById('roomBadge').textContent = 'Connecting...';
-      document.getElementById('chatHeaderTitle').textContent = targetInput ? 'Joined Room' : 'Host Room';
+      document.getElementById('chatHeaderTitle').textContent = `Room: ${activeRoomId}`;
 
       mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
         keepalive: 60,
@@ -183,7 +243,7 @@
 
       mqttClient.on('connect', () => {
         document.getElementById('roomBadge').textContent = 'Connected';
-        mqttClient.subscribe(`e2ee-hostchat-v6/${activeRoomId}`);
+        mqttClient.subscribe(`e2ee-hostchat-v7/${activeRoomId}`);
 
         setTimeout(async () => {
           if (!hasLoadedHistory) {
@@ -197,6 +257,51 @@
         if (!decrypted) return;
         handleIncomingMessage(decrypted);
       });
+    }
+
+    /* Camera QR Code Scanner logic */
+    async function startQRScanner() {
+      if (!('BarcodeDetector' in window)) {
+        alert("Native camera QR scanning isn't supported on this browser. Please type the 6-digit PIN manually!");
+        return;
+      }
+
+      document.getElementById('scannerModal').style.display = 'flex';
+      const video = document.getElementById('videoPreview');
+
+      try {
+        videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        video.srcObject = videoStream;
+
+        const barcodeDetector = new BarcodeDetector({ formats: ['qr_code'] });
+        scanInterval = setInterval(async () => {
+          try {
+            const barcodes = await barcodeDetector.detect(video);
+            if (barcodes.length > 0) {
+              const rawUrl = barcodes[0].rawValue;
+              let detectedPin = rawUrl;
+              if (rawUrl.includes('?room=')) {
+                detectedPin = new URL(rawUrl).searchParams.get('room');
+              }
+              document.getElementById('targetRoomInput').value = detectedPin.toUpperCase();
+              stopQRScanner();
+              alert(`Scanned Room PIN: ${detectedPin}`);
+            }
+          } catch (err) {}
+        }, 500);
+
+      } catch (err) {
+        alert("Camera permission denied or camera not available.");
+        stopQRScanner();
+      }
+    }
+
+    function stopQRScanner() {
+      if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+      }
+      if (scanInterval) clearInterval(scanInterval);
+      document.getElementById('scannerModal').style.display = 'none';
     }
 
     async function handleIncomingMessage(msg) {
@@ -218,11 +323,8 @@
       if (msg.expiresAt && now > msg.expiresAt) return;
 
       if (msg.type !== 'history_request' && msg.type !== 'history_response') {
-        // Check if message was already rendered locally via uploading placeholder
         const existingTemp = document.getElementById(msg.msgId);
-        if (existingTemp) {
-          existingTemp.remove(); // Remove temporary upload preview to avoid duplicate
-        }
+        if (existingTemp) existingTemp.remove();
 
         localChatHistory.push(msg);
         if (localChatHistory.length > 100) localChatHistory.shift();
@@ -251,13 +353,12 @@
       await broadcastPayload(payload);
     }
 
-    /* WhatsApp-Style Upload Functionality with Live Percentage */
     async function handleFileUpload(event) {
       const file = event.target.files[0];
       if (!file) return;
 
       if (file.size > 1.5 * 1024 * 1024) {
-        alert("File size exceeds 1.5 MB limit for WebSockets payload.");
+        alert("File size exceeds 1.5 MB limit.");
         event.target.value = '';
         return;
       }
@@ -267,12 +368,10 @@
       const formattedTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       const formattedSize = formatBytes(file.size);
 
-      // Render temp bubble immediately with 0% progress
       renderUploadPlaceholder(tempMsgId, file.name, formattedSize, formattedTime);
 
       const reader = new FileReader();
 
-      // Track reading & processing percentage (0% to 80%)
       reader.onprogress = function(e) {
         if (e.lengthComputable) {
           const percent = Math.round((e.loaded / e.total) * 80);
@@ -282,7 +381,7 @@
 
       reader.onload = async function(e) {
         try {
-          updateProgressUI(tempMsgId, 90); // Encrypting state
+          updateProgressUI(tempMsgId, 90);
 
           let fileTypeCategory = 'file';
           if (file.type.startsWith('image/')) fileTypeCategory = 'image';
@@ -301,7 +400,7 @@
             expiresAt: now + (24 * 60 * 60 * 1000)
           };
 
-          updateProgressUI(tempMsgId, 100); // Encryption done, publishing
+          updateProgressUI(tempMsgId, 100);
           await broadcastPayload(payload);
 
         } catch (err) {
@@ -329,7 +428,7 @@
             <span class="file-name">📄 ${escapeHtml(fileName)}</span>
             <span class="file-size">${fileSize}</span>
           </div>
-          <div class="upload-progress-wrapper" id="progress_wrapper_${id}">
+          <div class="upload-progress-wrapper">
             <div class="progress-spinner"></div>
             <span class="progress-text" id="progress_text_${id}">0%</span>
           </div>
@@ -343,15 +442,13 @@
 
     function updateProgressUI(id, percent) {
       const progressText = document.getElementById(`progress_text_${id}`);
-      if (progressText) {
-        progressText.textContent = `${percent}%`;
-      }
+      if (progressText) progressText.textContent = `${percent}%`;
     }
 
     async function broadcastPayload(payload) {
       if (!mqttClient || !cryptoKey) return;
       const encrypted = await encryptPayload(payload);
-      mqttClient.publish(`e2ee-hostchat-v6/${activeRoomId}`, encrypted, { qos: 1 });
+      mqttClient.publish(`e2ee-hostchat-v7/${activeRoomId}`, encrypted, { qos: 1 });
     }
 
     function renderMessage(msg, shouldScroll = true) {
