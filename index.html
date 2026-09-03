@@ -353,7 +353,6 @@
           updateProgressUI(msgId, percent);
 
           if (receivedCount === totalChunks) {
-            // ALL CHUNKS RECEIVED - Now convert to fast Blob URL instead of using raw Base64
             const completeBase64 = incomingChunks[msgId].chunks.join('');
             const fastFileUrl = await base64ToFastUrl(completeBase64);
 
@@ -407,7 +406,6 @@
       await broadcastPayload(payload);
     }
 
-    // Reverted handleFileUpload to original sequential version as requested
     async function handleFileUpload(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -452,7 +450,9 @@
 
             const percent = Math.round(((i + 1) / totalChunks) * 100);
             updateProgressUI(tempMsgId, percent);
-            await new Promise(r => setTimeout(r, 25)); // Original delay
+            
+            // Increased delay to 50ms to ensure the public broker doesn't drop packets
+            await new Promise(r => setTimeout(r, 50)); 
           }
 
           const fullMsg = {
@@ -519,7 +519,8 @@
     async function broadcastPayload(payload) {
       if (!mqttClient || !cryptoKey) return;
       const encrypted = await encryptPayload(payload);
-      mqttClient.publish(`e2ee-hostchat-v8/${activeRoomId}`, encrypted, { qos: 0 });
+      // FIXED: Changed qos from 0 to 1 so the broker guarantees packet delivery without dropping chunks
+      mqttClient.publish(`e2ee-hostchat-v8/${activeRoomId}`, encrypted, { qos: 1 });
     }
 
     function renderMessage(msg, shouldScroll = true) {
