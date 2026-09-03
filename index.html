@@ -8,13 +8,11 @@
   <!-- PWA Meta Tags -->
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0f172a">
-  
-  <!-- iOS Support -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="SecureChat">
   <link rel="apple-touch-icon" href="icon-192.png">
-  
+
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <!-- Universal QR Generator & Scanner Libraries -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -141,6 +139,13 @@
   </div>
 
   <script>
+    // PWA Service Worker Registration
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW failed:', err));
+      });
+    }
+
     function generateShortPin() {
       const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
       let result = '';
@@ -158,9 +163,17 @@
       return prefix + Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
     }
 
+    // MEMORY FEATURE: Load saved PIN and username from App Storage
+    const savedRoomPin = localStorage.getItem('e2ee_room_pin');
+    const savedUsername = localStorage.getItem('e2ee_username');
+
     const myClientId = generateSecureId('client_');
-    const myRoomId = generateShortPin();
+    const myRoomId = savedRoomPin ? savedRoomPin : generateShortPin();
+    
     document.getElementById('myRoomDisplay').textContent = myRoomId;
+    if (savedUsername) {
+      document.getElementById('usernameInput').value = savedUsername;
+    }
 
     const currentBaseUrl = window.location.href.split('?')[0];
     const roomShareUrl = `${currentBaseUrl}?room=${myRoomId}`;
@@ -218,6 +231,18 @@
       }
     }
 
+    // FAST ASSEMBLE FEATURE: Converts Base64 chunks into a lightweight Blob URL to prevent freezing
+    async function base64ToFastUrl(base64String) {
+      try {
+        const response = await fetch(base64String);
+        const blob = await response.blob();
+        return URL.createObjectURL(blob);
+      } catch (err) {
+        console.error("Blob conversion failed, returning raw base64");
+        return base64String;
+      }
+    }
+
     async function connectToChat() {
       const nameInput = document.getElementById('usernameInput').value.trim();
       const targetInput = document.getElementById('targetRoomInput').value.trim().toUpperCase();
@@ -226,6 +251,11 @@
       username = nameInput;
 
       activeRoomId = targetInput || myRoomId;
+      
+      // Save data for next time the user opens the app
+      localStorage.setItem('e2ee_username', username);
+      localStorage.setItem('e2ee_room_pin', myRoomId); 
+
       cryptoKey = await initCryptoKey(activeRoomId);
 
       document.getElementById('modal').style.display = 'none';
@@ -323,11 +353,14 @@
           updateProgressUI(msgId, percent);
 
           if (receivedCount === totalChunks) {
+            // ALL CHUNKS RECEIVED - Now convert to fast Blob URL instead of using raw Base64
             const completeBase64 = incomingChunks[msgId].chunks.join('');
+            const fastFileUrl = await base64ToFastUrl(completeBase64);
+
             const assembledMsg = {
               ...incomingChunks[msgId].meta,
               type: msg.fileTypeCategory,
-              content: completeBase64
+              content: fastFileUrl
             };
             delete incomingChunks[msgId];
 
@@ -374,6 +407,7 @@
       await broadcastPayload(payload);
     }
 
+    // Reverted handleFileUpload to original sequential version as requested
     async function handleFileUpload(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -418,7 +452,7 @@
 
             const percent = Math.round(((i + 1) / totalChunks) * 100);
             updateProgressUI(tempMsgId, percent);
-            await new Promise(r => setTimeout(r, 25));
+            await new Promise(r => setTimeout(r, 25)); // Original delay
           }
 
           const fullMsg = {
@@ -543,18 +577,6 @@
 
     function escapeHtml(str) {
       return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    }
-    // Register Service Worker for PWA
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js')
-          .then(registration => {
-            console.log('ServiceWorker registered with scope:', registration.scope);
-          })
-          .catch(err => {
-            console.log('ServiceWorker registration failed:', err);
-          });
-      });
     }
   </script>
 </body>
